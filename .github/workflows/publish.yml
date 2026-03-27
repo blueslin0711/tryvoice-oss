@@ -1,0 +1,48 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/client-web/frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: apps/client-web/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy frontend dist into Python package
+        run: |
+          mkdir -p apps/host-runtime/backend/static-dist
+          cp -r apps/client-web/frontend/dist/. apps/host-runtime/backend/static-dist/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build Python package
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

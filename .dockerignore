@@ -1,0 +1,11 @@
+**/__pycache__
+**/*.pyc
+.git
+.env
+docs/
+migration/
+*.db
+*.db-wal
+*.db-shm
+node_modules
+.venv

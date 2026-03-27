@@ -1,0 +1,35 @@
+{
+  "inputMode": "ptt",
+  "ttsRates": {
+    "main": "1.3",
+    "tester": "1.3",
+    "coder": "1.3",
+    "visual": "1.3"
+  },
+  "wwEngine": "openwakeword",
+  "wwMapping": {
+    "main": "Alexa",
+    "coder": "Blueberry",
+    "visual": "Jarvis",
+    "tester": "Grasshopper"
+  },
+  "botNames": {
+    "main": "Alexa",
+    "coder": "BlueBerry",
+    "visual": "Jarvis",
+    "tester": "Grasshopper"
+  },
+  "voices": {
+    "tester": "zh-HK-WanLungNeural",
+    "coder": "zh-TW-HsiaoChenNeural",
+    "visual": "zh-CN-YunyangNeural"
+  },
+  "wwAllowBargeIn": "1",
+  "theme": "dark",
+  "fontSize": "14",
+  "autoRead": "0",
+  "pvEndword": "Picovoice",
+  "pvCancelword": "Terminator",
+  "displayGranularity": "all",
+  "ttsGranularity": "final_only"
+}

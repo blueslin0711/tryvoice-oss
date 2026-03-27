@@ -1,0 +1,1490 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Chat State Inspector</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3345;
+    --text: #e1e4ed;
+    --text-dim: #8b90a5;
+    --accent: #6c8cff;
+    --accent-dim: #3d5199;
+    --green: #4ade80;
+    --green-dim: #166534;
+    --yellow: #facc15;
+    --yellow-dim: #713f12;
+    --red: #f87171;
+    --red-dim: #7f1d1d;
+    --orange: #fb923c;
+    --purple: #a78bfa;
+    --cyan: #22d3ee;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+    color: var(--accent);
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+  }
+
+  /* Layout */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Scenario list */
+  .scenario-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .scenario-panel h2 {
+    font-size: 0.9rem;
+    padding: 12px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .scenario-group-title {
+    font-size: 0.75rem;
+    padding: 8px 16px 4px;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: var(--bg);
+  }
+  .scenario-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+    font-size: 0.85rem;
+  }
+  .scenario-item:hover { background: var(--surface2); }
+  .scenario-item.active {
+    background: var(--accent-dim);
+    border-left: 3px solid var(--accent);
+  }
+  .scenario-item .scenario-label { font-weight: 500; }
+  .scenario-item .scenario-desc {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .scenario-list {
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+  }
+
+  /* Right panel */
+  .detail-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* State dashboard */
+  .state-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+  }
+  .state-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .state-card.highlight {
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(108, 140, 255, 0.15);
+  }
+  .state-card .card-label {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+  .state-card .card-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    min-height: 1.4em;
+  }
+  .state-card .card-value.idle { color: var(--text-dim); }
+  .state-card .card-value.recording { color: var(--red); }
+  .state-card .card-value.processing { color: var(--yellow); }
+  .state-card .card-value.speaking { color: var(--green); }
+  .state-card .card-value.error { color: var(--red); }
+  .state-card .card-value.info { color: var(--cyan); }
+
+  /* Timeline */
+  .timeline-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .timeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+  .timeline-header h3 {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .timeline-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .timeline-controls button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.15s;
+  }
+  .timeline-controls button:hover { background: var(--accent-dim); border-color: var(--accent); }
+  .timeline-controls button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .step-counter {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    min-width: 60px;
+    text-align: center;
+  }
+  .timeline-body {
+    padding: 16px;
+  }
+
+  /* Step card */
+  .step-card {
+    padding: 12px 16px;
+    border-left: 3px solid var(--border);
+    margin-bottom: 12px;
+    transition: all 0.3s;
+    border-radius: 0 8px 8px 0;
+    background: transparent;
+  }
+  .step-card.current {
+    border-left-color: var(--accent);
+    background: rgba(108, 140, 255, 0.06);
+  }
+  .step-card.done {
+    border-left-color: var(--green-dim);
+    opacity: 0.6;
+  }
+  .step-card.future {
+    opacity: 0.35;
+  }
+  .step-trigger {
+    font-size: 0.75rem;
+    color: var(--accent);
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+  .step-description {
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+  }
+  .step-states {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .step-state-tag {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .step-state-tag.idle { background: var(--surface2); color: var(--text-dim); }
+  .step-state-tag.recording { background: var(--red-dim); color: var(--red); }
+  .step-state-tag.processing { background: var(--yellow-dim); color: var(--yellow); }
+  .step-state-tag.speaking { background: var(--green-dim); color: var(--green); }
+  .step-state-tag.error { background: var(--red-dim); color: var(--red); }
+  .step-state-tag.info { background: rgba(34,211,238,0.1); color: var(--cyan); }
+
+  /* Mic simulation */
+  .mic-sim {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .mic-orb {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    transition: all 0.4s;
+    position: relative;
+  }
+  .mic-orb.idle {
+    background: var(--surface2);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  .mic-orb.recording {
+    background: var(--red-dim);
+    box-shadow: 0 0 20px rgba(248, 113, 113, 0.3);
+    animation: pulse-red 1.5s ease-in-out infinite;
+  }
+  .mic-orb.processing {
+    background: var(--yellow-dim);
+    box-shadow: 0 0 20px rgba(250, 204, 21, 0.2);
+    animation: pulse-yellow 2s ease-in-out infinite;
+  }
+  .mic-orb.speaking {
+    background: var(--green-dim);
+    box-shadow: 0 0 20px rgba(74, 222, 128, 0.3);
+    animation: pulse-green 1s ease-in-out infinite;
+  }
+  @keyframes pulse-red {
+    0%, 100% { box-shadow: 0 0 10px rgba(248,113,113,0.2); }
+    50% { box-shadow: 0 0 25px rgba(248,113,113,0.4); }
+  }
+  @keyframes pulse-yellow {
+    0%, 100% { box-shadow: 0 0 10px rgba(250,204,21,0.15); }
+    50% { box-shadow: 0 0 20px rgba(250,204,21,0.3); }
+  }
+  @keyframes pulse-green {
+    0%, 100% { box-shadow: 0 0 10px rgba(74,222,128,0.2); }
+    50% { box-shadow: 0 0 25px rgba(74,222,128,0.4); }
+  }
+  .mic-status-text {
+    margin-left: 20px;
+    text-align: left;
+  }
+  .mic-status-label {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+  .mic-status-sub {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* Playback bar */
+  .playback-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .playback-bar button {
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    padding: 6px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .playback-bar button:hover { filter: brightness(1.15); }
+  .playback-bar .auto-label {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .playback-bar .speed-select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+
+  /* Check result */
+  .check-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .check-section h3 {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .check-btns {
+    display: flex;
+    gap: 8px;
+  }
+  .check-btn {
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+  }
+  .check-btn.pass {
+    background: var(--green-dim);
+    color: var(--green);
+    border-color: var(--green-dim);
+  }
+  .check-btn.pass:hover { filter: brightness(1.2); }
+  .check-btn.fail {
+    background: var(--red-dim);
+    color: var(--red);
+    border-color: var(--red-dim);
+  }
+  .check-btn.fail:hover { filter: brightness(1.2); }
+  .check-btn.skip {
+    background: var(--surface2);
+    color: var(--text-dim);
+  }
+  .check-btn.skip:hover { background: var(--border); }
+  .check-result-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+  .check-result-badge.pass { background: var(--green-dim); color: var(--green); }
+  .check-result-badge.fail { background: var(--red-dim); color: var(--red); }
+  .check-result-badge.skip { background: var(--surface2); color: var(--text-dim); }
+
+  /* Summary bar */
+  .summary-bar {
+    display: flex;
+    gap: 16px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.85rem;
+    align-items: center;
+  }
+  .summary-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .summary-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .summary-dot.pass { background: var(--green); }
+  .summary-dot.fail { background: var(--red); }
+  .summary-dot.skip { background: var(--text-dim); }
+  .summary-dot.pending { background: var(--border); }
+
+  .empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+
+  /* Notes */
+  .notes-area {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    resize: vertical;
+    min-height: 40px;
+    margin-top: 8px;
+    font-family: inherit;
+  }
+  .notes-area::placeholder { color: var(--text-dim); }
+  .notes-area:focus { outline: none; border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Voice Chat State Inspector</h1>
+  <div class="subtitle">交互式状态流程检查工具 — 逐一验证每个场景的状态变化是否符合预期</div>
+
+  <!-- Summary bar -->
+  <div class="summary-bar" id="summaryBar">
+    <span style="color:var(--text-dim)">进度:</span>
+    <span class="summary-stat"><span class="summary-dot pass"></span> <span id="passCount">0</span> 通过</span>
+    <span class="summary-stat"><span class="summary-dot fail"></span> <span id="failCount">0</span> 异常</span>
+    <span class="summary-stat"><span class="summary-dot skip"></span> <span id="skipCount">0</span> 跳过</span>
+    <span class="summary-stat"><span class="summary-dot pending"></span> <span id="pendingCount">0</span> 待检</span>
+  </div>
+
+  <div class="main-grid" style="margin-top:16px">
+    <!-- Left: Scenario list -->
+    <div class="scenario-panel">
+      <h2>场景列表</h2>
+      <div class="scenario-list" id="scenarioList"></div>
+    </div>
+
+    <!-- Right: Detail -->
+    <div class="detail-panel" id="detailPanel">
+      <div class="empty-state">← 请从左侧选择一个场景开始检查</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========== SCENARIO DATA ==========
+const SCENARIOS = [
+  // ── PTT Happy Path ──
+  {
+    group: 'PTT 模式 (按下说话)',
+    id: 'ptt-happy',
+    label: 'PTT 完整流程 (正常)',
+    desc: '用户点击→录音→STT→Agent处理→生成回复→TTS朗读→回到空闲',
+    steps: [
+      {
+        trigger: '初始状态',
+        desc: '页面加载后，PTT 模式空闲状态',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '用户点击麦克风按钮',
+        desc: 'startRecording() 被调用，获取麦克风权限，开始录音',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+        events: ['ui:voice-feedback → start', 'ui:mic-state → recording', 'ui:cancel-buttons → true'],
+      },
+      {
+        trigger: '用户再次点击麦克风 (停止录音)',
+        desc: 'stopRecording()，mediaRecorder.stop()，触发 onstop 回调',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+        events: ['ui:voice-feedback → stop', 'ui:voice-ripple → 0'],
+        note: 'onstop 是异步的，录音状态在回调中才改变',
+      },
+      {
+        trigger: 'onstop 回调 — 开始 STT 识别',
+        desc: 'browserSTT.transcribe(blob)，或发送音频到服务器',
+        appState: 'processing', micState: 'processing', statusText: '识别中...', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['ui:mic-state → processing', 'ui:status-text → 识别中...'],
+      },
+      {
+        trigger: 'STT 完成，文字发送到服务器',
+        desc: 'outbox.enqueue({type:"text", text, botId}), 等待服务器处理',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['chat:add-user-msg'],
+      },
+      {
+        trigger: 'WS: transcript 消息',
+        desc: '服务器确认收到用户输入，显示转录文本',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['setBotMicState → processing', 'setBotStatus → 处理中'],
+      },
+      {
+        trigger: 'WS: intermediate_step 消息',
+        desc: 'Agent 正在思考，显示 💭 中间步骤',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['addBotMsg → 💭 intermediate'],
+      },
+      {
+        trigger: 'WS: response_chunk 消息 (流式)',
+        desc: '文本回复开始流式到达',
+        appState: 'processing', micState: 'processing', statusText: '生成中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['appendStreamChunk', 'setBotStatus → 生成中'],
+      },
+      {
+        trigger: 'WS: audio_chunk 消息',
+        desc: 'TTS 音频开始流式到达，准备播放',
+        appState: 'speaking', micState: 'speaking', statusText: '朗读中', audioState: 'playing',
+        bodyClass: 'state-speaking', micClass: 'speaking',
+        events: ['setBotMicState → speaking', 'autoReadEnqueue'],
+      },
+      {
+        trigger: 'WS: response_complete 消息',
+        desc: '文本生成完成。音频还在播放，所以不回到空闲',
+        appState: 'speaking', micState: 'speaking', statusText: '朗读中', audioState: 'playing',
+        bodyClass: 'state-speaking', micClass: 'speaking',
+        events: ['st.responseDone = true', '设置 15s 安全超时'],
+        note: '因为 audioDone=false，不会 resetBotToIdle',
+      },
+      {
+        trigger: 'WS: audio_complete 消息',
+        desc: 'TTS 全部音频发送完成',
+        appState: 'speaking', micState: '', statusText: '朗读中', audioState: 'playing',
+        bodyClass: 'state-speaking', micClass: 'speaking',
+        events: ['completeStreamAudio', 'resetBotToIdle', 'dispatcher:audio-complete'],
+        note: 'micState 重置，但 audioPlayer 可能还在播放队列中的音频',
+      },
+      {
+        trigger: 'audio:state → phase: end',
+        desc: 'audioPlayer 真正播放完最后一段音频',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['setMicRecordingState → ""', 'setStatus → 点击说话', 'scheduleUnreadAnnouncement'],
+      },
+    ],
+  },
+
+  // ── PTT Recording Too Short ──
+  {
+    group: 'PTT 模式 (按下说话)',
+    id: 'ptt-too-short',
+    label: 'PTT 录音太短',
+    desc: '用户点击后立即松开，录音时间不足',
+    steps: [
+      {
+        trigger: '初始状态',
+        desc: 'PTT 空闲',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '用户快速点击+松开',
+        desc: 'startRecording → 很快 stopRecording',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+      },
+      {
+        trigger: 'onstop — buildRecordingBlob 返回 null',
+        desc: '音频太短（不够数据），直接回到空闲',
+        appState: 'idle', micState: '', statusText: '录音太短', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['ui:status-text → 录音太短', 'ui:mic-state → ""'],
+        note: '状态栏短暂显示"录音太短"后恢复默认',
+      },
+    ],
+  },
+
+  // ── PTT Cancel Recording ──
+  {
+    group: 'PTT 模式 (按下说话)',
+    id: 'ptt-cancel',
+    label: 'PTT 取消录音',
+    desc: '用户录音中按取消按钮',
+    steps: [
+      {
+        trigger: '初始状态',
+        desc: 'PTT 空闲',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '用户点击麦克风开始录音',
+        desc: '进入录音状态',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+      },
+      {
+        trigger: '用户点击取消按钮',
+        desc: 'cancelRecording()，设置 recordingCancelled=true，然后 stopRecording()',
+        appState: 'idle', micState: '', statusText: '已取消录音', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['ui:voice-feedback → cancel', 'ui:cancel-buttons → false', 'ui:status-text → 已取消录音'],
+        note: 'onstop 回调检测到 cancelled=true，直接 return，不处理音频',
+      },
+    ],
+  },
+
+  // ── PTT STT Not Heard ──
+  {
+    group: 'PTT 模式 (按下说话)',
+    id: 'ptt-not-heard',
+    label: 'PTT 语音未识别',
+    desc: '录音正常但 STT 无法识别内容',
+    steps: [
+      {
+        trigger: '初始状态',
+        desc: 'PTT 空闲',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '用户录音并松开',
+        desc: '进入 STT 识别阶段',
+        appState: 'processing', micState: 'processing', statusText: '识别中...', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+      },
+      {
+        trigger: 'browserSTT.transcribe 返回空结果',
+        desc: 'transcript 为空字符串或 null',
+        appState: 'idle', micState: '', statusText: '没听清，再说一次？', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['ui:status-text → 没听清...', 'setBotMicState → ""', 'ui:mic-state → ""'],
+      },
+    ],
+  },
+
+  // ── PTT Mic Permission Denied ──
+  {
+    group: 'PTT 模式 (按下说话)',
+    id: 'ptt-mic-denied',
+    label: 'PTT 麦克风权限拒绝',
+    desc: '用户拒绝了麦克风权限',
+    steps: [
+      {
+        trigger: '初始状态',
+        desc: 'PTT 空闲',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '用户点击麦克风，浏览器弹出权限对话框',
+        desc: '等待用户授权',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '用户拒绝麦克风权限',
+        desc: 'getMicStream() 抛出异常',
+        appState: 'idle', micState: '', statusText: '麦克风权限被拒绝', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['ui:status-text → 麦克风权限被拒绝'],
+      },
+    ],
+  },
+
+  // ── Cancel During Speaking ──
+  {
+    group: 'PTT 模式 (按下说话)',
+    id: 'ptt-cancel-speaking',
+    label: '朗读中取消 (停止朗读)',
+    desc: '在 Agent 朗读回复时点击取消，停止当前朗读',
+    steps: [
+      {
+        trigger: 'Agent 正在朗读',
+        desc: 'audioPlayer 正在播放音频',
+        appState: 'speaking', micState: 'speaking', statusText: '朗读中', audioState: 'playing',
+        bodyClass: 'state-speaking', micClass: 'speaking',
+      },
+      {
+        trigger: '用户点击取消按钮',
+        desc: 'cancelRecording() → 检测到 audioPlayer.state!="idle" → audioPlayer.cancelPlayback()',
+        appState: 'idle', micState: '', statusText: '已停止朗读', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['audioPlayer.cancelPlayback()', 'ui:cancel-buttons → false', 'ui:status-text → 已停止朗读'],
+        note: '取消按钮优先停止朗读，而不是取消录音',
+      },
+    ],
+  },
+
+  // ── PTT Barge-in ──
+  {
+    group: 'PTT 模式 (按下说话)',
+    id: 'ptt-barge-in',
+    label: 'PTT 打断朗读 (Barge-in)',
+    desc: '在 Agent 朗读中用户点击麦克风开始新的录音',
+    steps: [
+      {
+        trigger: 'Agent 正在朗读',
+        desc: 'audioPlayer 正在播放',
+        appState: 'speaking', micState: 'speaking', statusText: '朗读中', audioState: 'playing',
+        bodyClass: 'state-speaking', micClass: 'speaking',
+      },
+      {
+        trigger: '用户点击麦克风',
+        desc: 'startRecording() → audioPlayer.stop() 停止当前朗读 → 开始新录音',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+        events: ['audioPlayer.stop()', 'ui:voice-feedback → start'],
+        note: 'startRecording 会先 stop audioPlayer，实现打断',
+      },
+    ],
+  },
+
+  // ── Processing Timeout ──
+  {
+    group: '异常 & 超时',
+    id: 'processing-timeout',
+    label: '处理超时 (30s)',
+    desc: 'Agent 处理超过 30 秒没有响应',
+    steps: [
+      {
+        trigger: '用户发送消息，进入处理状态',
+        desc: 'setBotMicState(botId, "processing") 启动了 30s 定时器',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+      },
+      {
+        trigger: '30 秒过去，没有收到任何 WS 消息',
+        desc: 'PROCESSING_TIMEOUT_MS 定时器触发',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['bot:processing-timeout'],
+        note: 'micState 和 status 自动重置为空，避免卡在处理状态',
+      },
+    ],
+  },
+
+  // ── Audio Safety Timeout ──
+  {
+    group: '异常 & 超时',
+    id: 'audio-safety-timeout',
+    label: '音频安全超时 (15s)',
+    desc: 'response_complete 后 15s 仍未收到 audio_complete',
+    steps: [
+      {
+        trigger: '文本回复完成，等待音频',
+        desc: 'response_complete 收到，responseDone=true, audioDone=false',
+        appState: 'processing', micState: 'processing', statusText: '生成中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['st.responseDone = true'],
+      },
+      {
+        trigger: '15 秒过去，audio_complete 未到达',
+        desc: '安全定时器触发 resetBotToIdle',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['resetBotToIdle', 'setBotStreamState → null'],
+        note: '防止永远卡在等待音频的状态',
+      },
+    ],
+  },
+
+  // ── Echo Suspected ──
+  {
+    group: '异常 & 超时',
+    id: 'echo-suspected',
+    label: '疑似回声检测',
+    desc: '系统检测到录音可能是回声（Agent在朗读时录到了自己的声音）',
+    steps: [
+      {
+        trigger: 'Agent 刚刚朗读完毕',
+        desc: '短时间内用户又开始录音',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+      },
+      {
+        trigger: 'WS: status → "疑似回声"',
+        desc: '服务器检测到录音内容可能是刚才的 TTS 回放',
+        appState: 'idle', micState: '', statusText: '疑似回声', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['setBotStatus → 疑似回声'],
+        note: '状态栏显示"疑似回声"提示用户',
+      },
+    ],
+  },
+
+  // ── Wakeword Happy Path ──
+  {
+    group: '唤醒词模式',
+    id: 'ww-happy',
+    label: '唤醒词完整流程 (正常)',
+    desc: '系统持续监听→检测到唤醒词→自动录音→处理→回复→回到监听',
+    steps: [
+      {
+        trigger: '初始状态',
+        desc: '唤醒词模式空闲，系统在后台持续监听',
+        appState: 'idle', micState: '', statusText: '等唤醒', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        note: '与 PTT 不同，默认状态文字是"等唤醒"',
+      },
+      {
+        trigger: '检测到唤醒词 ("嗨川川")',
+        desc: '唤醒词引擎回调触发，自动开始录音',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+        events: ['ui:voice-feedback → start (TTS: "我在")', 'toast → 听到嗨川川，开始录音...'],
+        note: '唤醒词模式用 TTS 语音反馈（"我在"）而不是 beep',
+      },
+      {
+        trigger: '用户说 "我说好了" (结束词)',
+        desc: '检测到结束词，自动停止录音',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['ui:voice-feedback → stop (TTS: "我收到了")'],
+      },
+      {
+        trigger: 'Agent 处理并回复',
+        desc: '与 PTT 流程相同：response_chunk → audio_chunk',
+        appState: 'speaking', micState: 'speaking', statusText: '朗读中', audioState: 'playing',
+        bodyClass: 'state-speaking', micClass: 'speaking',
+      },
+      {
+        trigger: '朗读完成',
+        desc: '回到唤醒词监听状态',
+        appState: 'idle', micState: '', statusText: '等唤醒', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        note: '注意默认状态文字是"等唤醒"而不是"点击说话"',
+      },
+    ],
+  },
+
+  // ── Wakeword Cancel ──
+  {
+    group: '唤醒词模式',
+    id: 'ww-cancel',
+    label: '唤醒词取消录音',
+    desc: '用户在唤醒词模式下说"取消取消"来取消当前录音',
+    steps: [
+      {
+        trigger: '唤醒词触发后录音中',
+        desc: '系统检测到唤醒词，正在录音',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+      },
+      {
+        trigger: '用户说 "取消取消" (取消词)',
+        desc: 'cancelRecording() 被调用',
+        appState: 'idle', micState: '', statusText: '等唤醒', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['ui:voice-feedback → cancel (TTS: "我取消了")', 'ui:cancel-buttons → false'],
+      },
+    ],
+  },
+
+  // ── Wakeword Barge-in ──
+  {
+    group: '唤醒词模式',
+    id: 'ww-barge-in',
+    label: '唤醒词打断朗读 (Barge-in)',
+    desc: '在 Agent 朗读回复时说唤醒词打断，并开始新对话',
+    steps: [
+      {
+        trigger: 'Agent 正在朗读回复',
+        desc: 'audioPlayer 正在播放',
+        appState: 'speaking', micState: 'speaking', statusText: '朗读中', audioState: 'playing',
+        bodyClass: 'state-speaking', micClass: 'speaking',
+      },
+      {
+        trigger: '用户说唤醒词 "嗨川川"',
+        desc: '如果开启了"播报中唤醒打断"，停止朗读并开始录音',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+        events: ['audioPlayer.stop()', 'clearDeferredReads()'],
+        note: '如果未开启打断，会显示 toast: "已听到唤醒词，需开启播报中唤醒打断"',
+      },
+    ],
+  },
+
+  // ── Wakeword Init Steps ──
+  {
+    group: '唤醒词模式',
+    id: 'ww-init',
+    label: '唤醒词初始化过程',
+    desc: '切换到唤醒词模式时的初始化步骤',
+    steps: [
+      {
+        trigger: '用户点击切换到唤醒词模式',
+        desc: '开始初始化唤醒词引擎',
+        appState: 'idle', micState: '', statusText: '初始化', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['ui:input-mode → wakeword'],
+      },
+      {
+        trigger: '步骤 1: 请求麦克风权限',
+        desc: '[1/4] 请求麦克风权限...',
+        appState: 'idle', micState: '', statusText: '初始化', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '步骤 2: 加载模型',
+        desc: '[2/4] 加载 openWakeWord 模型...',
+        appState: 'idle', micState: '', statusText: '初始化', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '步骤 3: 启动监听',
+        desc: '[3/4] 启动语音监听...',
+        appState: 'idle', micState: '', statusText: '初始化', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '初始化完成',
+        desc: '唤醒词引擎就绪，开始后台监听',
+        appState: 'idle', micState: '', statusText: '等唤醒', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+    ],
+  },
+
+  // ── Non-streaming Response ──
+  {
+    group: 'WS 消息变体',
+    id: 'ws-non-streaming',
+    label: '非流式回复 (response + audio)',
+    desc: 'Adapter 不支持流式时，收到完整 response 消息 + 完整 audio 消息',
+    steps: [
+      {
+        trigger: '用户发送消息',
+        desc: '进入处理状态',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+      },
+      {
+        trigger: 'WS: response 消息 (完整)',
+        desc: '一次性收到完整文本回复，不经过 chunk 流式',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['setBotStreamState → null', 'addBotMsg → assistant'],
+        note: 'response 消息不改变 micState 和 status',
+      },
+      {
+        trigger: 'WS: audio 消息 (完整)',
+        desc: '一次性收到完整音频，开始播放',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'playing',
+        bodyClass: '', micClass: '',
+        events: ['setBotMicState → ""', 'setBotStatus → 点击说话', 'autoReadEnqueue'],
+        note: 'audio 消息直接将 micState 重置为空',
+      },
+      {
+        trigger: 'audio:state → phase: end',
+        desc: 'audioPlayer 播放完成',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+    ],
+  },
+
+  // ── speak message ──
+  {
+    group: 'WS 消息变体',
+    id: 'ws-speak',
+    label: 'speak 消息',
+    desc: '收到 speak 类型消息（纯 TTS 播报）',
+    steps: [
+      {
+        trigger: 'WS: speak 消息',
+        desc: '服务端直接发送要朗读的文本',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'playing',
+        bodyClass: '', micClass: '',
+        events: ['setBotMicState → ""', 'setBotStatus → 点击说话', 'autoReadEnqueue'],
+        note: 'speak 消息如果有 streamState 会先 complete 它',
+      },
+    ],
+  },
+
+  // ── Status message from server ──
+  {
+    group: 'WS 消息变体',
+    id: 'ws-status-processing',
+    label: 'status 消息 (处理关键词)',
+    desc: '服务器发来状态消息，包含处理相关关键词',
+    steps: [
+      {
+        trigger: 'WS: status → "前面还有一条在处理中，已排队"',
+        desc: '检测到关键词"处理中"和"已排队"',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['setBotMicState → processing'],
+        note: 'compactStatusText 将长文本映射为"处理中"',
+      },
+    ],
+  },
+
+  // ── WS Connection Lost ──
+  {
+    group: '连接 & 网络',
+    id: 'ws-disconnect',
+    label: 'WebSocket 断开连接',
+    desc: '网络中断导致 WebSocket 连接断开',
+    steps: [
+      {
+        trigger: 'WebSocket 连接正常',
+        desc: '正常工作状态',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: 'ws:close 事件',
+        desc: 'WebSocket 连接断开',
+        appState: 'idle', micState: '', statusText: '重连中', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['ws:close'],
+        note: '状态栏显示"重连中"带动画点',
+      },
+      {
+        trigger: 'ws:open 事件',
+        desc: 'WebSocket 重新连接成功',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['ws:open'],
+      },
+    ],
+  },
+
+  // ── Session Reset ──
+  {
+    group: '连接 & 网络',
+    id: 'session-reset',
+    label: '会话重置',
+    desc: '用户手动重置会话',
+    steps: [
+      {
+        trigger: '用户点击重置按钮',
+        desc: '发送重置请求到服务器',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['toast → 重置请求已发送'],
+      },
+      {
+        trigger: 'WS: session_reset_confirmed',
+        desc: '服务器确认会话已重置',
+        appState: 'idle', micState: '', statusText: '已重置', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['toast → XXX 会话已重置（历史保留）', 'syncManager.schedule'],
+        note: '状态栏短暂显示"已重置"',
+      },
+    ],
+  },
+
+  // ── Session Reset Failed ──
+  {
+    group: '连接 & 网络',
+    id: 'session-reset-failed',
+    label: '会话重置失败',
+    desc: '会话重置请求失败',
+    steps: [
+      {
+        trigger: 'WS: session_reset_failed',
+        desc: '服务器返回重置失败',
+        appState: 'idle', micState: '', statusText: '重置失败', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['toast → XXX 会话重置失败'],
+      },
+    ],
+  },
+
+  // ── Bot Switch ──
+  {
+    group: 'Bot 切换',
+    id: 'bot-switch-idle',
+    label: '空闲时切换 Bot',
+    desc: '在空闲状态下切换到另一个 Bot',
+    steps: [
+      {
+        trigger: '当前在 Bot A，空闲',
+        desc: 'Bot A 状态正常',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: '用户点击 Bot B 的 tab',
+        desc: 'setCurrentBotId(botB)，切换当前 bot',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['bot:switch → botB', 'renderChat(botB)', 'updateMicAvatar', 'setUnreadCount(botB, 0)'],
+        note: '状态栏和麦克风状态跟随目标 Bot 的状态',
+      },
+    ],
+  },
+
+  // ── Bot Switch while processing ──
+  {
+    group: 'Bot 切换',
+    id: 'bot-switch-processing',
+    label: '处理中切换 Bot',
+    desc: 'Bot A 在处理中，切换到空闲的 Bot B',
+    steps: [
+      {
+        trigger: 'Bot A 处理中，用户点击 Bot B',
+        desc: 'Bot A: micState=processing, Bot B: micState=""',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'idle',
+        bodyClass: 'state-processing', micClass: 'processing',
+      },
+      {
+        trigger: '切换到 Bot B',
+        desc: 'currentBotId=botB，UI 跟随 Bot B 的状态',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['bot:switch → botB'],
+        note: 'Bot A 的 processing 状态不变，只是 UI 不再显示它',
+      },
+      {
+        trigger: 'Bot A 在后台收到回复',
+        desc: 'Bot A 的 unread count+1，Badge 显示',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['updateBadges → Bot A badge show'],
+        note: '因为 botId !== currentBotId，不更新 UI 状态',
+      },
+    ],
+  },
+
+  // ── Auto Read Unread ──
+  {
+    group: '自动朗读',
+    id: 'auto-read',
+    label: '自动朗读未读消息',
+    desc: '开启自动朗读时，收到新回复自动播放',
+    steps: [
+      {
+        trigger: '空闲状态，自动朗读开启',
+        desc: 'isAutoReadEnabled = true',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+      },
+      {
+        trigger: 'WS: audio_chunk 到达',
+        desc: 'autoReadEnqueue 将音频加入播放队列',
+        appState: 'speaking', micState: 'speaking', statusText: '朗读中', audioState: 'playing',
+        bodyClass: 'state-speaking', micClass: 'speaking',
+        events: ['autoReadEnqueue', 'audioPlayer.enqueue'],
+      },
+      {
+        trigger: '播放完成',
+        desc: '如果全局空闲，触发未读通知',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['scheduleUnreadAnnouncement'],
+        note: '如果有其他 Bot 未读消息，4s 后播报通知',
+      },
+    ],
+  },
+
+  // ── Deferred Reads ──
+  {
+    group: '自动朗读',
+    id: 'deferred-reads',
+    label: '延迟朗读 (录音中收到回复)',
+    desc: '用户录音中收到消息，暂存到录音结束后再播放',
+    steps: [
+      {
+        trigger: '用户正在录音，收到 audio_chunk',
+        desc: 'isRecordingActive()=true → 延迟入队',
+        appState: 'recording', micState: 'recording', statusText: '🔴 正在听...', audioState: 'idle',
+        bodyClass: 'state-recording', micClass: 'recording',
+        events: ['autoReadEnqueue → _deferredReads.push()'],
+        note: '不立即播放，避免录到自己的朗读声',
+      },
+      {
+        trigger: '录音结束',
+        desc: 'flushDeferredReads() 将暂存的音频加入播放队列',
+        appState: 'processing', micState: 'processing', statusText: '处理中', audioState: 'playing',
+        bodyClass: 'state-processing', micClass: 'processing',
+        events: ['flushDeferredReads → audioPlayer.enqueue'],
+      },
+    ],
+  },
+
+  // ── Unread Announcement ──
+  {
+    group: '自动朗读',
+    id: 'unread-announce',
+    label: '未读消息播报',
+    desc: '全局空闲时自动播报其他 Bot 的未读消息计数',
+    steps: [
+      {
+        trigger: '全局空闲 + 有其他 Bot 未读消息',
+        desc: 'scheduleUnreadAnnouncement → 4s 延迟',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'idle',
+        bodyClass: '', micClass: '',
+        events: ['scheduleUnreadAnnouncement'],
+      },
+      {
+        trigger: '4 秒后检查仍然空闲',
+        desc: '生成 TTS 播报: "XXX有3条未读消息"',
+        appState: 'idle', micState: '', statusText: '点击说话', audioState: 'playing',
+        bodyClass: '', micClass: '',
+        events: ['_requestAnnounceTTS', 'audioPlayer.enqueue'],
+        note: '如果生成文本与上次相同则不重复播报',
+      },
+    ],
+  },
+];
+
+// ========== STATE ==========
+let currentScenarioId = null;
+let currentStep = 0;
+let checkResults = {}; // scenarioId → 'pass' | 'fail' | 'skip'
+let scenarioNotes = {}; // scenarioId → string
+
+// Load from sessionStorage
+try {
+  checkResults = JSON.parse(sessionStorage.getItem('vc_check_results') || '{}');
+  scenarioNotes = JSON.parse(sessionStorage.getItem('vc_scenario_notes') || '{}');
+} catch (_e) {}
+
+function saveState() {
+  sessionStorage.setItem('vc_check_results', JSON.stringify(checkResults));
+  sessionStorage.setItem('vc_scenario_notes', JSON.stringify(scenarioNotes));
+}
+
+// ========== RENDER ==========
+function renderScenarioList() {
+  const list = document.getElementById('scenarioList');
+  let html = '';
+  let lastGroup = '';
+  for (const s of SCENARIOS) {
+    if (s.group !== lastGroup) {
+      html += `<div class="scenario-group-title">${s.group}</div>`;
+      lastGroup = s.group;
+    }
+    const active = currentScenarioId === s.id ? ' active' : '';
+    const badge = checkResults[s.id]
+      ? `<span class="check-result-badge ${checkResults[s.id]}">${{pass:'通过',fail:'异常',skip:'跳过'}[checkResults[s.id]]}</span>`
+      : '';
+    html += `<div class="scenario-item${active}" onclick="selectScenario('${s.id}')">
+      <div class="scenario-label">${s.label}${badge}</div>
+      <div class="scenario-desc">${s.desc}</div>
+    </div>`;
+  }
+  list.innerHTML = html;
+  updateSummary();
+}
+
+function updateSummary() {
+  const total = SCENARIOS.length;
+  let pass = 0, fail = 0, skip = 0;
+  for (const s of SCENARIOS) {
+    if (checkResults[s.id] === 'pass') pass++;
+    else if (checkResults[s.id] === 'fail') fail++;
+    else if (checkResults[s.id] === 'skip') skip++;
+  }
+  document.getElementById('passCount').textContent = pass;
+  document.getElementById('failCount').textContent = fail;
+  document.getElementById('skipCount').textContent = skip;
+  document.getElementById('pendingCount').textContent = total - pass - fail - skip;
+}
+
+function selectScenario(id) {
+  currentScenarioId = id;
+  currentStep = 0;
+  renderScenarioList();
+  renderDetail();
+}
+
+function renderDetail() {
+  const panel = document.getElementById('detailPanel');
+  if (!currentScenarioId) {
+    panel.innerHTML = '<div class="empty-state">← 请从左侧选择一个场景开始检查</div>';
+    return;
+  }
+  const scenario = SCENARIOS.find(s => s.id === currentScenarioId);
+  if (!scenario) return;
+  const step = scenario.steps[currentStep];
+
+  let html = '';
+
+  // Mic sim
+  const orbClass = step.micClass || 'idle';
+  const statusLabel = step.statusText || '—';
+  const micEmoji = orbClass === 'recording' ? '🔴' : orbClass === 'speaking' ? '🔊' : orbClass === 'processing' ? '⏳' : '🎙️';
+  html += `<div class="mic-sim">
+    <div class="mic-orb ${orbClass}">${micEmoji}</div>
+    <div class="mic-status-text">
+      <div class="mic-status-label">${statusLabel}</div>
+      <div class="mic-status-sub">body: ${step.bodyClass || '(无)'} · mic-btn: ${step.micClass || '(无)'}</div>
+    </div>
+  </div>`;
+
+  // State dashboard
+  html += `<div class="state-dashboard">
+    <div class="state-card${step.appState !== 'idle' ? ' highlight' : ''}">
+      <div class="card-label">App State</div>
+      <div class="card-value ${step.appState}">${step.appState}</div>
+    </div>
+    <div class="state-card${step.micState ? ' highlight' : ''}">
+      <div class="card-label">Bot Mic State</div>
+      <div class="card-value ${step.micState || 'idle'}">${step.micState || '""(空)'}</div>
+    </div>
+    <div class="state-card">
+      <div class="card-label">Status Text</div>
+      <div class="card-value ${step.micState || 'idle'}">${step.statusText}</div>
+    </div>
+    <div class="state-card${step.audioState !== 'idle' ? ' highlight' : ''}">
+      <div class="card-label">Audio Player</div>
+      <div class="card-value ${step.audioState === 'playing' ? 'speaking' : 'idle'}">${step.audioState}</div>
+    </div>
+    <div class="state-card">
+      <div class="card-label">body class</div>
+      <div class="card-value ${step.bodyClass ? (step.bodyClass.includes('recording') ? 'recording' : step.bodyClass.includes('processing') ? 'processing' : 'speaking') : 'idle'}">${step.bodyClass || '(无)'}</div>
+    </div>
+    <div class="state-card">
+      <div class="card-label">mic-btn class</div>
+      <div class="card-value ${step.micClass || 'idle'}">${step.micClass || '(无)'}</div>
+    </div>
+  </div>`;
+
+  // Playback bar
+  html += `<div class="playback-bar">
+    <button onclick="prevStep()" ${currentStep <= 0 ? 'disabled' : ''}>← 上一步</button>
+    <span class="step-counter">${currentStep + 1} / ${scenario.steps.length}</span>
+    <button onclick="nextStep()" ${currentStep >= scenario.steps.length - 1 ? 'disabled' : ''}>下一步 →</button>
+    <button onclick="autoPlay()" id="autoPlayBtn">▶ 自动播放</button>
+  </div>`;
+
+  // Timeline
+  html += `<div class="timeline-section">
+    <div class="timeline-header">
+      <h3>${scenario.label}</h3>
+    </div>
+    <div class="timeline-body">`;
+
+  for (let i = 0; i < scenario.steps.length; i++) {
+    const s = scenario.steps[i];
+    const cls = i === currentStep ? 'current' : i < currentStep ? 'done' : 'future';
+    html += `<div class="step-card ${cls}" onclick="goToStep(${i})" style="cursor:pointer">
+      <div class="step-trigger">▸ ${s.trigger}</div>
+      <div class="step-description">${s.desc}</div>
+      <div class="step-states">
+        <span class="step-state-tag ${s.appState}">app:${s.appState}</span>
+        <span class="step-state-tag ${s.micState || 'idle'}">mic:${s.micState || '""'}</span>
+        <span class="step-state-tag ${s.audioState === 'playing' ? 'speaking' : 'idle'}">audio:${s.audioState}</span>
+      </div>`;
+    if (s.events && i === currentStep) {
+      html += `<div style="margin-top:6px; font-size:0.75rem; color:var(--purple)">`;
+      for (const ev of s.events) {
+        html += `<div>↳ ${ev}</div>`;
+      }
+      html += `</div>`;
+    }
+    if (s.note && i === currentStep) {
+      html += `<div style="margin-top:4px; font-size:0.75rem; color:var(--orange); font-style:italic">⚠ ${s.note}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `</div></div>`;
+
+  // Check section
+  html += `<div class="check-section">
+    <h3>验收判定</h3>
+    <div style="font-size:0.85rem; color:var(--text-dim); margin-bottom:8px">
+      检查完所有步骤后，标记此场景的状态变化是否符合你的预期：
+    </div>
+    <div class="check-btns">
+      <button class="check-btn pass" onclick="checkScenario('pass')">✓ 符合预期</button>
+      <button class="check-btn fail" onclick="checkScenario('fail')">✗ 有异常</button>
+      <button class="check-btn skip" onclick="checkScenario('skip')">→ 跳过</button>
+    </div>
+    <textarea class="notes-area" placeholder="备注（可选）：记录发现的问题或想法..."
+      oninput="saveNotes(this.value)">${scenarioNotes[currentScenarioId] || ''}</textarea>
+  </div>`;
+
+  panel.innerHTML = html;
+}
+
+function goToStep(i) {
+  currentStep = i;
+  renderDetail();
+}
+
+function prevStep() {
+  if (currentStep > 0) { currentStep--; renderDetail(); }
+}
+
+function nextStep() {
+  const scenario = SCENARIOS.find(s => s.id === currentScenarioId);
+  if (scenario && currentStep < scenario.steps.length - 1) { currentStep++; renderDetail(); }
+}
+
+let _autoInterval = null;
+function autoPlay() {
+  const btn = document.getElementById('autoPlayBtn');
+  if (_autoInterval) {
+    clearInterval(_autoInterval);
+    _autoInterval = null;
+    btn.textContent = '▶ 自动播放';
+    return;
+  }
+  btn.textContent = '⏸ 暂停';
+  _autoInterval = setInterval(() => {
+    const scenario = SCENARIOS.find(s => s.id === currentScenarioId);
+    if (!scenario || currentStep >= scenario.steps.length - 1) {
+      clearInterval(_autoInterval);
+      _autoInterval = null;
+      const b = document.getElementById('autoPlayBtn');
+      if (b) b.textContent = '▶ 自动播放';
+      return;
+    }
+    currentStep++;
+    renderDetail();
+  }, 1500);
+}
+
+function checkScenario(result) {
+  checkResults[currentScenarioId] = result;
+  saveState();
+  renderScenarioList();
+  renderDetail();
+  // Auto advance to next unchecked
+  const currentIdx = SCENARIOS.findIndex(s => s.id === currentScenarioId);
+  for (let i = currentIdx + 1; i < SCENARIOS.length; i++) {
+    if (!checkResults[SCENARIOS[i].id]) {
+      selectScenario(SCENARIOS[i].id);
+      return;
+    }
+  }
+}
+
+function saveNotes(text) {
+  scenarioNotes[currentScenarioId] = text;
+  saveState();
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); prevStep(); }
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); nextStep(); }
+  if (e.key === '1') checkScenario('pass');
+  if (e.key === '2') checkScenario('fail');
+  if (e.key === '3') checkScenario('skip');
+  if (e.key === ' ') { e.preventDefault(); autoPlay(); }
+});
+
+// Init
+renderScenarioList();
+</script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+{
+  "_comment": "STT misheard variants for wake/end/cancel keywords (all lowercase). Add new keywords here so _trim_endword can recognise STT mishearings. The key is the canonical keyword; the value is a list of known STT output variants.",
+
+  "picovoice":   ["pico voice", "peak voice", "pick a voice", "peek a voice",
+                   "peko voice", "pico boys", "pickle voice", "peak of voice",
+                   "peeko voice", "piko voice"],
+  "porcupine":   ["pork you pine", "porky pine", "pork a pine"],
+  "jarvis":      ["jar vis", "jarves", "jarvus"],
+  "alexa":       ["a lexa"],
+  "computer":    ["come pewter", "compute her"],
+  "terminator":  ["terminate her", "terminate or", "the terminator"],
+  "blueberry":   ["blue berry", "blew berry"],
+  "bumblebee":   ["bumble bee", "bumble b", "bubble bee"],
+  "grapefruit":  ["grape fruit", "great fruit", "gray fruit"],
+  "americano":   ["americana", "american oh", "american o"],
+  "grasshopper": ["grass hopper", "grass opera", "grass offer"],
+
+  "snowboy":     ["snow boy", "snow boys"],
+  "suspend":     ["sus pend", "suspense", "su spend"],
+  "transmit":    ["trans mit", "trans meet"],
+  "discontinue": ["dis continue", "disco continue"],
+  "dispatch":    ["dis patch", "this patch"],
+
+  "hey jarvis":  ["hey jar vis", "hey jarves"],
+  "hey mycroft": ["hey my croft", "hey mike croft"],
+  "hey rhasspy": ["hey raspy", "hey raspberry"],
+
+  "tryvoice cancel":  ["try voice cancel", "tri voice cancel", "try boys cancel",
+                       "try boy cancel", "try boy's cancel", "trivoice cancel",
+                       "try coice cancel", "try boys' cancel"],
+  "tryvoice confirm": ["try voice confirm", "tri voice confirm", "try boys confirm",
+                       "try boy confirm", "try boy's confirm", "trivoice confirm",
+                       "try coice confirm", "try boys' confirm"]
+}

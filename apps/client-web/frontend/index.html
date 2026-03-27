@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<script>try{var t=localStorage.getItem('tryvoice_theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0c1220">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<title>TryVoice</title>
+<link rel="stylesheet" href="/static/katex.min.css" crossorigin="anonymous">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+
+<div id="app-shell">
+  <aside id="top-bar">
+    <div class="brand-wrap">
+      <h1>TryVoice</h1>
+      <button id="settings-btn" aria-label="打开设置"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
+    <div id="history-search-sidebar" class="history-search-sidebar">
+      <div class="history-search-head">
+        <div class="history-tools-title" data-i18n="ui.history_title">历史消息</div>
+        <button id="history-search-close" class="history-search-close" aria-label="关闭搜索"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="history-search-row">
+        <input
+          type="text"
+          id="history-search-input"
+          class="history-search-input"
+          placeholder="关键词搜索（跨 session）" data-i18n-placeholder="ui.search_placeholder"
+          autocomplete="off"
+        >
+        <button class="preview-btn" id="history-search-btn" data-i18n="ui.search">搜索</button>
+      </div>
+      <div class="history-search-row">
+        <select id="history-search-bot">
+          <option value="" data-i18n-opt="settings.all_bots">全部 Bot</option>
+        </select>
+        <span class="history-search-scope" data-i18n="ui.local_cache_only">仅搜索本机缓存</span>
+      </div>
+      <div id="history-search-results" class="history-search-results">
+        <div class="history-search-empty" data-i18n="ui.search_empty">输入关键词后搜索</div>
+      </div>
+    </div>
+    <div id="bot-tabs">
+      <div class="bot-tab active" data-bot="main"><img class="tab-avatar" alt="Alexa 头像" style="display:none"><span class="tab-avatar-emoji">👩</span><span class="tab-name">Alexa</span><span class="badge"></span></div>
+      <div class="bot-tab" data-bot="coder"><img class="tab-avatar" alt="Blueberry 头像" style="display:none"><span class="tab-avatar-emoji">👨‍💻</span><span class="tab-name">Blueberry</span><span class="badge"></span></div>
+      <div class="bot-tab" data-bot="visual"><img class="tab-avatar" alt="Jarvis 头像" style="display:none"><span class="tab-avatar-emoji">🎨</span><span class="tab-name">Jarvis</span><span class="badge"></span></div>
+      <div class="bot-tab" data-bot="tester"><img class="tab-avatar" alt="Grasshopper 头像" style="display:none"><span class="tab-avatar-emoji">🔧</span><span class="tab-name">Grasshopper</span><span class="badge"></span></div>
+    </div>
+  </aside>
+
+  <main id="chat-main">
+    <div id="focus-banner">
+      <span id="focus-banner-text"></span>
+      <button id="focus-banner-toggle"></button>
+    </div>
+
+    <div id="chat-wrapper">
+      <div id="drag-handle"><div class="bar"></div></div>
+      <div id="transcript"></div>
+    </div>
+
+    <div id="text-reply-bar">
+      <button id="text-reply-image-btn" title="上传图片" aria-label="上传图片"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>
+      <div id="text-input-box">
+        <textarea id="text-reply-input" rows="1" placeholder="手动输入" data-i18n-placeholder="ui.text_input_placeholder" autocomplete="off"></textarea>
+        <button id="text-reply-send" data-i18n="ui.send">发送</button>
+      </div>
+      <input type="file" id="text-reply-image-input" accept="image/*" hidden>
+    </div>
+  </main>
+
+  <div id="mic-area">
+    <div id="hint">点击说话 · 空格键</div>
+    <div id="status">连接中</div>
+    <div id="mic-wrapper">
+      <button id="ww-toggle" title="暂停/恢复唤醒词监听"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></button>
+      <button id="mic-btn"><svg class="icon icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
+      <button id="cancel-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <button id="auto-read-toggle" title="自动朗读开/关"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>
+    </div>
+    <div id="mic-tools-row">
+      <button id="history-search-toggle" title="搜索历史" style="display:none"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+      <button id="menu-toggle" title="菜单" aria-label="打开菜单" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    </div>
+    <div id="menu-panel" aria-hidden="true">
+      <button id="menu-auto-read-btn" class="menu-action-btn" title="朗读开关" aria-label="朗读开关"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>
+      <button id="menu-history-btn" class="menu-action-btn" title="历史搜索" aria-label="历史搜索" style="display:none"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+      <button id="menu-image-btn" class="menu-action-btn" title="附加图片" aria-label="附加图片"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>
+      <button id="menu-settings-btn" class="menu-action-btn" title="设置" aria-label="设置"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
+    <div id="car-bot-name">Alexa</div>
+    <div id="car-carousel"></div>
+    <button id="car-cancel-btn" aria-label="取消本次录音"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  </div>
+</div>
+
+<button id="car-exit-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> <span data-i18n="ui.exit_car_mode">退出车载</span></button>
+<div id="car-swipe-hint" data-i18n="ui.swipe_hint">← 左右滑动切换Bot →</div>
+<div id="car-overlay" class="car-overlay">
+  <div class="car-overlay-top">
+    <div class="car-overlay-bot-info">
+      <span id="car-overlay-avatar" class="car-overlay-avatar"></span>
+      <span id="car-overlay-name" class="car-overlay-name"></span>
+    </div>
+    <button id="car-overlay-settings" class="car-overlay-icon-btn" aria-label="设置">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+  <div id="car-overlay-status" class="car-overlay-status"></div>
+  <div class="car-overlay-orb-container">
+    <div class="car-orb-ring" id="car-orb-ring">
+      <canvas id="car-orb-canvas"></canvas>
+    </div>
+    <div class="car-orb-hint" id="car-orb-hint">点击说话</div>
+  </div>
+  <div class="car-overlay-bottom">
+    <button id="car-overlay-mode" class="car-overlay-circle-btn" aria-label="切换输入模式" title="切换输入模式">🤚</button>
+    <button id="car-overlay-mute" class="car-overlay-circle-btn" aria-label="静音">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+    </button>
+    <button id="car-overlay-exit" class="car-overlay-circle-btn" aria-label="退出车载模式">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+</div>
+<div id="history-search-backdrop"></div>
+
+<div id="settings-overlay">
+  <div id="settings-panel">
+    <h3 style="display:flex;align-items:center;justify-content:space-between"><span style="display:flex;align-items:center;gap:4px"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> <span data-i18n="settings.title">设置</span></span><span class="settings-lang-wrap"><span class="settings-lang-label">语言/Language</span><select id="app-language-select" class="settings-lang-select">
+          <option value="zh-CN" data-i18n-opt="settings.lang.zh_cn">中文</option>
+          <option value="en" data-i18n-opt="settings.lang.en">English</option>
+        </select></span></h3>
+
+    <nav id="settings-nav">
+      <button type="button" class="settings-nav-item active" data-settings-tab="interaction" data-i18n="settings.tab.interaction">交互方式</button>
+      <button type="button" class="settings-nav-item" data-settings-tab="voice" data-i18n="settings.tab.voice">语音与播报</button>
+      <button type="button" class="settings-nav-item" data-settings-tab="bot" data-i18n="settings.tab.bot">Bot 配置</button>
+      <button type="button" class="settings-nav-item" data-settings-tab="appearance" data-i18n="settings.tab.appearance">外观</button>
+      <button type="button" class="settings-nav-item" data-settings-tab="history" data-i18n="settings.tab.history">语音历史</button>
+      <button type="button" class="settings-nav-item" data-settings-tab="advanced" data-i18n="settings.tab.advanced">高级</button>
+    </nav>
+
+    <div id="settings-content">
+    <!-- Group: Interaction (input mode + wakeword settings together) -->
+    <details class="settings-group" id="settings-tab-interaction" open>
+      <summary class="settings-group-header" data-i18n="settings.tab.interaction">交互方式</summary>
+      <div class="settings-group-body">
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.input_mode">输入模式</span>
+            <select id="input-mode-select">
+              <option value="ptt" data-i18n-opt="settings.option.ptt">点击说话</option>
+              <option value="wakeword" data-i18n-opt="settings.option.wakeword">唤醒词</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-item" id="endword-setting" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.endword">结束词</span>
+            <input type="text" id="endword-input" value="我说好了" class="setting-text-input">
+            <select id="pv-endword-select" style="display:none"></select>
+            <select id="oww-endword-select" style="display:none"></select>
+            <select id="skws-endword-select" style="display:none"></select>
+          </div>
+        </div>
+        <div class="setting-item" id="cancelword-setting" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.cancelword">取消词</span>
+            <input type="text" id="cancelword-input" value="取消取消" class="setting-text-input">
+            <select id="pv-cancelword-select" style="display:none"></select>
+            <select id="oww-cancelword-select" style="display:none"></select>
+            <select id="skws-cancelword-select" style="display:none"></select>
+          </div>
+        </div>
+        <div class="setting-item" id="ww-engine-setting" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.ww_engine">唤醒引擎</span>
+            <select id="ww-engine-select">
+              <option value="openwakeword">openWakeWord (免费 / 6个内置唤醒词 / 零配置)</option>
+              <option value="picovoice">Picovoice (更准确 / 需API Key / 需设备注册)</option>
+              <option value="sherpa-onnx-kws">Sherpa-ONNX KWS (免费 / 10个英文预设词 / 零配置)</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-item" id="ww-threshold-setting" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.ww_threshold">唤醒灵敏度</span>
+            <div class="setting-controls">
+              <span style="font-size:11px;color:var(--text-dim);" data-i18n="settings.label.ww_threshold_sensitive">灵敏</span>
+              <input type="range" class="slider-fixed slider-range" id="ww-threshold-slider" min="0.05" max="0.9" step="0.05">
+              <span style="font-size:11px;color:var(--text-dim);" data-i18n="settings.label.ww_threshold_strict">严格</span>
+              <span id="ww-threshold-value" class="setting-value-label">0.50</span>
+            </div>
+          </div>
+        </div>
+        <div class="setting-item" id="ww-bargein-setting" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.ww_bargein">播报中唤醒打断</span>
+            <label class="toggle"><input type="checkbox" id="ww-bargein-toggle"><span class="slider"></span></label>
+          </div>
+        </div>
+        <div class="setting-item" id="ww-mic-aec-setting" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.ww_mic_aec">唤醒麦克风降噪</span>
+            <label class="toggle"><input type="checkbox" id="ww-mic-aec-toggle"><span class="slider"></span></label>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px;" data-i18n="settings.label.ww_mic_aec_hint">开启回声消除/降噪/自动增益（外放时可减少误触）</div>
+        </div>
+        <div class="setting-item" id="ww-vad-gate-setting" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.ww_vad_gate">VAD 语音门控</span>
+            <label class="toggle"><input type="checkbox" id="ww-vad-gate-toggle"><span class="slider"></span></label>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px;" data-i18n="settings.label.ww_vad_gate_hint">无语音时跳过唤醒词检测，减少噪音误触发</div>
+        </div>
+        <div class="setting-item" id="voiceprint-setting" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.voiceprint">声纹验证</span>
+            <label class="toggle"><input type="checkbox" id="voiceprint-toggle"><span class="slider"></span></label>
+          </div>
+          <div class="setting-row" id="voiceprint-threshold-row" style="display:none">
+            <span class="setting-label" data-i18n="settings.label.voiceprint_threshold">相似度阈值</span>
+            <div class="setting-controls">
+              <input type="range" id="voiceprint-threshold" min="0.15" max="0.60" step="0.01" value="0.35" class="slider-fixed slider-range">
+              <span id="voiceprint-threshold-value" class="setting-value-label">0.35</span>
+            </div>
+          </div>
+          <div class="setting-row" id="voiceprint-enroll-row" style="display:none">
+            <span class="setting-label" id="voiceprint-status">未注册</span>
+            <button id="voiceprint-enroll-btn" class="btn btn-sm" data-i18n="settings.label.voiceprint_enroll">注册声纹</button>
+            <button id="voiceprint-clear-btn" class="btn btn-sm voiceprint-clear-ml" style="display:none" data-i18n="settings.label.voiceprint_clear_btn">清除</button>
+          </div>
+          <!-- Enrollment wizard (replaces the old auto-record flow) -->
+          <div id="voiceprint-enroll-wizard" class="vp-wizard" style="display:none">
+            <div class="vp-wizard-steps">
+              <div class="vp-step" id="vp-step-0">1</div>
+              <div class="vp-step-line"></div>
+              <div class="vp-step" id="vp-step-1">2</div>
+              <div class="vp-step-line"></div>
+              <div class="vp-step" id="vp-step-2">3</div>
+              <button id="vp-wizard-cancel" class="vp-wizard-cancel" aria-label="Cancel">✕</button>
+            </div>
+            <div class="vp-wizard-body">
+              <div id="vp-enroll-wizard-status" class="vp-wizard-status"></div>
+              <canvas id="vp-waveform-canvas" class="vp-waveform-canvas" width="240" height="36" style="display:none"></canvas>
+              <div id="vp-processing" class="vp-processing" style="display:none">
+                <div class="vp-spinner"></div>
+                <span data-i18n="settings.voiceprint.processing">处理中...</span>
+              </div>
+              <button id="vp-record-btn" class="btn btn-sm vp-record-btn" data-i18n="settings.voiceprint.enroll_start">开始录音</button>
+            </div>
+          </div>
+          <!-- Verify section — always visible when enabled; disabled until enrolled -->
+          <div id="voiceprint-verify-section" class="voiceprint-verify-section" style="display:none">
+            <div class="voiceprint-verify-controls">
+              <button id="voiceprint-verify-btn" class="btn btn-sm" data-i18n="settings.voiceprint.verify_start">开始验证</button>
+              <div class="voiceprint-indicator-wrap">
+                <div class="voiceprint-indicator" id="voiceprint-indicator"></div>
+                <span class="voiceprint-verify-hint" id="voiceprint-verify-hint" data-i18n="settings.voiceprint.verify_hint_idle">点击开始，对着麦克风说话</span>
+              </div>
+            </div>
+            <div id="voiceprint-score-bar-wrap" class="voiceprint-score-bar-wrap" style="display:none">
+              <div class="voiceprint-score-bar-bg">
+                <div class="voiceprint-score-bar-fill" id="voiceprint-score-bar-fill"></div>
+                <div class="voiceprint-score-threshold-line" id="voiceprint-score-threshold-line"></div>
+              </div>
+              <span class="voiceprint-score-label" id="voiceprint-score-label">0.00</span>
+            </div>
+          </div>
+          <div id="voiceprint-history-section" class="vp-history-section" style="display:none">
+            <div class="vp-history-header">
+              <span data-i18n="settings.voiceprint.history_title">验证历史</span>
+              <button id="voiceprint-history-clear-btn" class="btn btn-xs vp-history-clear-btn" data-i18n="settings.voiceprint.history_clear">清空</button>
+            </div>
+            <div id="voiceprint-history-list" class="vp-history-list"></div>
+          </div>
+        </div>
+        <!-- personalize wakewords hidden -->
+        <div id="oww-personalize-row" style="display:none !important;margin-top:12px;">
+          <button id="oww-personalize-btn" class="settings-btn" style="width:100%;">
+            &#127908; Personalize Wakewords
+          </button>
+          <div style="font-size:11px;color:#888;margin-top:4px;">
+            Record your voice to improve detection accuracy
+          </div>
+        </div>
+        <!-- pipeline debug hidden -->
+        <div id="oww-pipeline-debug" style="display:none !important;margin-top:12px;padding:10px;border:1px dashed #555;border-radius:6px;background:rgba(255,165,0,0.05);">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <span style="font-size:11px;color:#f90;font-weight:600;">DEBUG</span>
+            <span style="font-size:12px;color:var(--text-dim);">Pipeline</span>
+          </div>
+          <select id="oww-pipeline-select" style="width:100%;"></select>
+          <div style="font-size:11px;color:#888;margin-top:4px;">
+            Switch wake word model pipeline (A/B/C/D variants)
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Group: Voice & Playback (STT, volume, TTS, display/read granularity) -->
+    <details class="settings-group" id="settings-tab-voice" open>
+      <summary class="settings-group-header" data-i18n="settings.tab.voice">语音与播报</summary>
+      <div class="settings-group-body">
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.stt_language">识别语言</span>
+            <select id="stt-language-select">
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+              <option value="auto">自动</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.stt_model">识别模型</span>
+            <select id="stt-model-select">
+              <option value="whisper-large-v3-turbo">Turbo (快)</option>
+              <option value="whisper-large-v3">Large V3 (准)</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.stt_chunk_duration">分段时长</span>
+            <select id="stt-chunk-duration">
+              <option value="10">10 秒</option>
+              <option value="30">30 秒</option>
+              <option value="60" selected>60 秒</option>
+              <option value="0" data-i18n-opt="settings.stt_chunk_no_split">不分段</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+            <span class="setting-label" data-i18n="settings.label.stt_vocab">自定义词表</span>
+            <textarea id="stt-vocab" rows="3" placeholder="每行一个专业术语&#10;如：Claude API&#10;TryVoice" data-i18n-placeholder="settings.label.stt_vocab_placeholder"
+              style="width:100%;padding:6px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:12px;font-family:inherit;resize:vertical;"></textarea>
+            <span style="font-size:11px;color:var(--text-dim);" data-i18n="settings.label.stt_vocab_hint">每行一个专有名词，帮助语音识别更准确</span>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.volume">音量</span>
+            <div class="setting-controls">
+              <button class="step-btn" id="vol-minus">-</button>
+              <input type="range" class="slider-fixed slider-range" id="volume-slider" min="0" max="100" value="100">
+              <button class="step-btn" id="vol-plus">+</button>
+              <span id="volume-value" class="setting-value-label setting-value-label-wide">100%</span>
+            </div>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.announce_voice">播报声音</span>
+            <button class="preview-btn" id="announce-voice-preview" data-i18n="settings.preview">试听</button>
+            <select id="announce-voice-select"></select>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.announce_rate">播报语速</span>
+            <div class="setting-controls">
+              <button class="step-btn" id="announce-rate-minus">-</button>
+              <input type="range" class="slider-fixed slider-range" id="announce-rate-slider" min="0.8" max="2.0" step="0.1" value="1.0">
+              <button class="step-btn" id="announce-rate-plus">+</button>
+              <span id="announce-rate-value" class="setting-value-label setting-value-label-wide">1.0x</span>
+            </div>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.granularity">显示内容</span>
+            <select id="granularity-select">
+              <option value="final_only" data-i18n-opt="settings.granularity_final_only">仅文字</option>
+              <option value="all" data-i18n-opt="settings.granularity_all">含 Tool Call</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Group: Bot Config -->
+    <details class="settings-group" id="settings-tab-bot">
+      <summary class="settings-group-header" data-i18n="settings.tab.bot">Bot 配置</summary>
+      <div class="settings-group-body">
+        <div class="setting-item setting-item-pad">
+          <div id="bot-settings-tabs"></div>
+        </div>
+        <div id="bot-settings-panel"></div>
+      </div>
+    </details>
+
+    <!-- Group: Appearance (theme, font, wake lock, text reply, car mode) -->
+    <details class="settings-group" id="settings-tab-appearance">
+      <summary class="settings-group-header" data-i18n="settings.tab.appearance">外观</summary>
+      <div class="settings-group-body">
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.dark_mode">深色模式</span>
+            <label class="toggle"><input type="checkbox" id="dark-mode-toggle"><span class="slider"></span></label>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.font_size">字体</span>
+            <div class="setting-controls">
+              <button class="step-btn" id="font-minus">-</button>
+              <input type="range" class="slider-fixed slider-range" id="font-size-slider" min="11" max="22" value="13">
+              <button class="step-btn" id="font-plus">+</button>
+              <span id="font-size-value" class="setting-value-label setting-value-label-wide">13px</span>
+            </div>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.wake_lock">屏幕常亮</span>
+            <label class="toggle"><input type="checkbox" id="wake-lock-toggle"><span class="slider"></span></label>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.text_reply">信息回复框</span>
+            <label class="toggle"><input type="checkbox" id="text-reply-toggle"><span class="slider"></span></label>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-row">
+            <span class="setting-label">录屏高度</span>
+            <select id="height-scale-select">
+              <option value="1">100%（默认）</option>
+              <option value="0.9">90%</option>
+              <option value="0.8">80%</option>
+              <option value="0.7">70%</option>
+              <option value="0.6">60%</option>
+              <option value="0.5">50%</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-item">
+          <button id="car-mode-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12.42V16h3"/><circle cx="6.5" cy="16.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg> <span data-i18n="settings.label.enter_car_mode">进入车载模式</span></button>
+        </div>
+      </div>
+    </details>
+
+    <!-- Group: Voice History -->
+    <details class="settings-group" id="settings-tab-history">
+      <summary class="settings-group-header" data-i18n="settings.tab.history">语音历史</summary>
+      <div class="settings-group-body">
+        <div id="voice-history-list" style="max-height:400px;overflow-y:auto;"></div>
+        <div class="setting-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span id="voice-history-count" style="font-size:calc(var(--user-font-size) - 2px);color:var(--text-dim);"></span>
+          <button id="voice-history-clear-btn" class="preview-btn" style="font-size:calc(var(--user-font-size) - 2px);" data-i18n="settings.label.history_clear_all">清空全部</button>
+        </div>
+      </div>
+    </details>
+
+    <!-- Group: Advanced (API keys, data management, debug) -->
+    <details class="settings-group" id="settings-tab-advanced">
+      <summary class="settings-group-header" data-i18n="settings.tab.advanced">高级</summary>
+      <div class="settings-group-body">
+        <div class="setting-item" id="groq-key-setting">
+          <div class="setting-row" style="flex-wrap:wrap;gap:8px;">
+            <span class="setting-label">Groq API Key</span>
+            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:200px;">
+              <input id="groq-key-input" type="password" placeholder="gsk_..."
+                style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:12px;">
+              <button id="groq-key-save-btn" type="button"
+                style="padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:12px;cursor:pointer;">
+                Save
+              </button>
+              <span id="groq-key-status" style="font-size:11px;white-space:nowrap;"></span>
+              <span id="stt-mode-status" style="font-size:11px;white-space:nowrap;margin-left:8px;"></span>
+            </div>
+          </div>
+        </div>
+        <div class="setting-item" id="azure-key-setting">
+          <div class="setting-row" style="flex-wrap:wrap;gap:8px;">
+            <span class="setting-label">Azure Speech Key</span>
+            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:200px;">
+              <input id="azure-key-input" type="password" placeholder="Key..."
+                style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:12px;">
+              <button id="azure-key-save-btn" type="button"
+                style="padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:12px;cursor:pointer;">
+                Save
+              </button>
+              <span id="azure-key-status" style="font-size:11px;white-space:nowrap;"></span>
+            </div>
+          </div>
+          <div class="setting-row" style="flex-wrap:wrap;gap:8px;margin-top:4px;">
+            <span class="setting-label">Azure Region</span>
+            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:200px;">
+              <input id="azure-region-input" type="text" placeholder="westus2"
+                style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:12px;">
+              <span style="font-size:10px;color:var(--text-dim);" data-i18n="settings.label.azure_region_hint">配置后走浏览器直连 Azure TTS，未配置则走服务端 Edge TTS</span>
+            </div>
+          </div>
+          <div class="setting-row" id="azure-tts-test-row" style="flex-wrap:wrap;gap:8px;margin-top:4px;">
+            <span class="setting-label">Connection Test</span>
+            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:200px;">
+              <button id="azure-tts-test-btn" class="preview-btn">Test Azure TTS</button>
+              <span id="azure-tts-test-result" style="font-size:11px;white-space:nowrap;"></span>
+            </div>
+          </div>
+        </div>
+        <div class="setting-item" id="tmux-mirror-setting">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.tmux_mirror">Terminal Mirror (tmux)</span>
+            <label class="toggle">
+              <input type="checkbox" id="tmux-mirror-toggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="setting-hint" style="font-size:11px;color:var(--text-dim);margin-top:2px;" data-i18n="settings.hint.tmux_mirror">Enable to open tmux terminal windows for Claude Code sessions. Disable for headless mode (more stable).</div>
+        </div>
+        <!-- full history sync & export hidden -->
+        <div class="setting-item" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.full_sync">全量同步历史到本机</span>
+            <button class="preview-btn" id="history-full-sync-btn" data-i18n="settings.start_sync">开始同步</button>
+          </div>
+          <div class="setting-row setting-row-mt">
+            <span class="setting-label" data-i18n="settings.label.export_history">导出消息历史</span>
+            <select id="history-export-bot">
+              <option value="" data-i18n-opt="settings.all_bots">全部 Bot</option>
+            </select>
+            <button class="avatar-upload-btn" id="history-export-btn" data-i18n="settings.export">导出</button>
+          </div>
+        </div>
+        <div class="setting-item" id="pv-debug-section" style="display:none">
+          <div class="setting-row">
+            <span class="setting-label" data-i18n="settings.label.pv_debug">Picovoice调试</span>
+            <button class="preview-btn" id="pv-debug-btn" data-i18n="settings.check">检查</button>
+          </div>
+          <div class="setting-row setting-row-mt">
+            <span class="setting-label" data-i18n="settings.label.adopt_old_device">套用旧设备注册</span>
+            <select id="pv-adopt-source" class="setting-select-narrow">
+              <option value="" data-i18n-opt="settings.auto_select_latest">自动选择最新</option>
+            </select>
+            <button class="avatar-upload-btn" id="pv-adopt-btn" data-i18n="settings.adopt">套用</button>
+          </div>
+          <pre id="pv-debug-output" class="pv-debug-output">点击"检查"查看当前设备的唤醒词状态</pre>
+        </div>
+        <!-- summary model config hidden -->
+        <div class="setting-item" style="display:none">
+          <details class="settings-section">
+            <summary class="settings-section-title">Summary Model</summary>
+            <div class="settings-section-body">
+              <div class="setting-row setting-row-mt">
+                <span class="setting-label">API URL</span>
+                <input type="text" id="summary-llm-url" class="setting-input-wide" placeholder="https://api.openai.com/v1">
+              </div>
+              <div class="setting-row setting-row-mt">
+                <span class="setting-label">API Key</span>
+                <input type="password" id="summary-llm-key" class="setting-input-wide" placeholder="sk-...">
+              </div>
+              <div class="setting-row setting-row-mt">
+                <span class="setting-label">Model</span>
+                <input type="text" id="summary-llm-model" class="setting-input-wide" placeholder="gpt-4o-mini">
+              </div>
+              <div class="setting-row setting-row-mt">
+                <button class="preview-btn" id="summary-llm-save">Save</button>
+              </div>
+            </div>
+          </details>
+        </div>
+        <div class="setting-item setting-item-adapter">
+          <button id="reconfigure-adapter-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Adapter Configuration</button>
+        </div>
+      </div>
+    </details>
+    </div>
+
+    <button id="close-settings" data-i18n="settings.label.close">关闭</button>
+  </div>
+</div>
+
+<input type="file" id="avatar-file-input" accept="image/*" style="display:none">
+<div id="copy-overlay">
+  <div class="copy-panel">
+    <div class="copy-panel-title" data-i18n="copy.title">复制</div>
+    <textarea id="copy-textarea" readonly></textarea>
+    <div class="copy-actions">
+      <button id="copy-do" class="copy-btn-primary" data-i18n="copy.copy_to_clipboard">复制到剪贴板</button>
+      <button id="copy-close" class="copy-btn-secondary" data-i18n="settings.label.close">关闭</button>
+    </div>
+    <div class="copy-hint">如果你的浏览器限制自动复制，可以点上面的按钮复制，或者在文本框里长按选择复制。</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="debug"></div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

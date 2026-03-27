@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+build/
+dist/
+.venv/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.env.local
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+
+# Test artifacts
+.hypothesis/
+
+# IDE / tooling
+.claude/
+.worktrees/
+.tryclaw-chat/
+.playwright-mcp/
+.pytest_cache/
+
+# Custom wake words (personal models; built-in keywords are tracked)
+apps/host-runtime/backend/wakeword/嗨川川*.ppn
+
+# Internal planning docs
+EXECUTION_PLAN*.md
+
+# Build artifacts (frontend dist served by backend)
+apps/host-runtime/backend/static-dist/
+apps/host-runtime/backend/static/
+apps/client-web/host-runtime/backend/static-dist/
+apps/client-web/frontend/dist-recording/
+apps/client-web/frontend/private/dist-recording/
+
+# Playwright
+test-results/
+playwright-report/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+apps/host-runtime/backend/wakeword/sherpa-kws/*.onnx
+apps/host-runtime/backend/static-dist/static/sherpa-onnx-wasm-kws-main.wasm
+apps/host-runtime/backend/static-dist/static/sherpa-onnx-wasm-kws-main.data

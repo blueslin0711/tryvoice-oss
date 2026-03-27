@@ -1,0 +1,38 @@
+{
+  "name": "tryvoice-client",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "cap:sync": "cap sync ios",
+    "cap:open": "cap open ios",
+    "cap:build": "npm run build && cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.2.0",
+    "@capacitor/local-notifications": "^8.0.2",
+    "@tensorflow/tfjs": "^4.22.0",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.33",
+    "marked": "^15.0.0",
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/ios": "^8.2.0",
+    "@eslint/js": "^9.0.0",
+    "@types/three": "^0.183.1",
+    "@vitejs/plugin-basic-ssl": "^2.1.4",
+    "eslint": "^9.0.0",
+    "jsdom": "^29.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
+  }
+}

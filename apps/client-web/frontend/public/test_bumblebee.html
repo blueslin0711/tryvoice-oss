@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head><title>Bumblebee Model Test</title></head>
+<body>
+<h2>ORT Web 1.14 - Bumblebee Model Test</h2>
+<pre id="log" style="font-size:14px; line-height:1.6"></pre>
+<script>
+function log(msg) {
+  document.getElementById('log').textContent += msg + '\n';
+  console.log(msg);
+}
+</script>
+<script src="/static/ort.js"></script>
+<script>
+(async function() {
+  try {
+    log('ORT loaded: ' + (typeof ort !== 'undefined'));
+    log('ORT version: ' + (ort?.env?.versions?.web || 'unknown'));
+
+    ort.env.wasm.wasmPaths = '/static/';
+    ort.env.wasm.numThreads = 1;
+    ort.env.wasm.proxy = false;
+
+    const opts = { executionProviders: ['wasm'] };
+
+    log('\n--- Infrastructure Models ---');
+    log('Loading melspectrogram.onnx...');
+    const mel = await ort.InferenceSession.create('/wakeword/melspectrogram.onnx', opts);
+    log('  OK');
+
+    log('Loading embedding_model.onnx...');
+    const emb = await ort.InferenceSession.create('/wakeword/embedding_model.onnx', opts);
+    log('  OK');
+
+    log('Loading silero_vad.onnx...');
+    const vad = await ort.InferenceSession.create('/wakeword/silero_vad.onnx', opts);
+    log('  OK');
+
+    log('\n--- Keyword Models ---');
+
+    log('Loading hey_jarvis_v0.1.onnx (3D, known working)...');
+    const hj = await ort.InferenceSession.create('/wakeword/hey_jarvis_v0.1.onnx', opts);
+    log('  OK: inputs=' + hj.inputNames);
+
+    log('Loading bumblebee.onnx (3D, custom-trained)...');
+    const bb = await ort.InferenceSession.create('/wakeword/bumblebee.onnx', opts);
+    log('  OK: inputs=' + bb.inputNames + ' outputs=' + bb.outputNames);
+
+    log('\n--- Inference Test ---');
+    const x = new Float32Array(16 * 96).fill(0.1);
+    const tensor = new ort.Tensor('float32', x, [1, 16, 96]);
+    const result = await bb.run({ input: tensor });
+    log('  Result: ' + result.output.data[0]);
+
+    log('\n=== ALL TESTS PASSED ===');
+  } catch(e) {
+    log('\nFAILED: ' + e.message);
+    log('Stack: ' + (e.stack || 'none'));
+  }
+})();
+</script>
+</body>
+</html>

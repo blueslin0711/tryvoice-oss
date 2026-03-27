@@ -1,0 +1,37 @@
+version: "3.9"
+services:
+  tryvoice:
+    build: .
+    ports:
+      - "7860:7860"
+    volumes:
+      - tryvoice-data:/data
+    environment:
+      - TRYVOICE_ACTIVE_ADAPTER=${TRYVOICE_ACTIVE_ADAPTER:-echo}
+      - AGENT_GATEWAY_URL=${AGENT_GATEWAY_URL:-}
+      - AGENT_GATEWAY_TOKEN=${AGENT_GATEWAY_TOKEN:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - EDGE_TTS_VOICE=${EDGE_TTS_VOICE:-zh-CN-XiaoxiaoNeural}
+      - TRYVOICE_ACCESS_PASSWORD=${TRYVOICE_ACCESS_PASSWORD:-}
+      # OpenClaw adapter settings
+      - OPENCLAW_GATEWAY_URL=${OPENCLAW_GATEWAY_URL:-}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+      # OpenAI-compatible adapter settings
+      - LLM_API_BASE_URL=${LLM_API_BASE_URL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_SYSTEM_PROMPT=${LLM_SYSTEM_PROMPT:-}
+      - LLM_PRESET=${LLM_PRESET:-}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-}
+      - LLM_MAX_HISTORY=${LLM_MAX_HISTORY:-}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-}
+      # Logging
+      - SERVER_LOG_LEVEL=${SERVER_LOG_LEVEL:-INFO}
+      - SERVER_LOG_FORMAT=${SERVER_LOG_FORMAT:-text}
+      # History retention
+      - HISTORY_RETENTION_DAYS=${HISTORY_RETENTION_DAYS:-0}
+      - HISTORY_MAX_MESSAGES_PER_BOT=${HISTORY_MAX_MESSAGES_PER_BOT:-0}
+    restart: unless-stopped
+
+volumes:
+  tryvoice-data:
