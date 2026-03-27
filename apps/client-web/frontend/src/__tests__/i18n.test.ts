@@ -46,10 +46,10 @@ describe('i18n', () => {
     expect(getLocale()).toBe('en');
   });
 
-  it('setLocale to unknown falls back to zh-CN', () => {
+  it('setLocale to unknown falls back to English', () => {
     setLocale('fr');
-    // Unknown locale → falls back to zhCN messages
-    expect(t('status.processing')).toBe('处理中');
+    // Unknown locale → falls back to English messages
+    expect(t('status.processing')).toBe('Processing');
   });
 
   it('getAvailableLocales returns zh-CN and en', () => {

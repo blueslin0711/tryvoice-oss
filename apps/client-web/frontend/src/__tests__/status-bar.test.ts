@@ -22,6 +22,12 @@ vi.stubGlobal('localStorage', {
 
 // Must import AFTER DOM setup
 const { setStatusText } = await import('../ui/status-bar');
+const { t } = await import('../i18n');
+
+const CANCELLED = t('status.cancelled');
+const NOT_HEARD = t('status.not_heard');
+const PROCESSING = t('status.processing');
+const DEFAULT = t('status.click_to_talk');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -34,37 +40,36 @@ afterEach(() => {
 
 describe('status bar auto-revert', () => {
   it('transient status reverts to default after 2.5s', () => {
-    // "已取消录音" compacts to "已取消" which is a known transient status
-    setStatusText('已取消录音', '点击说话');
-    expect(statusEl.textContent).toBe('已取消');
+    setStatusText(CANCELLED, DEFAULT);
+    expect(statusEl.textContent).toBe(CANCELLED);
     vi.advanceTimersByTime(2500);
-    expect(statusEl.textContent).toBe('点击说话');
+    expect(statusEl.textContent).toBe(DEFAULT);
   });
 
   it('non-transient status does NOT revert', () => {
-    setStatusText('处理中', '点击说话');
-    expect(statusEl.textContent).toContain('处理中');
+    setStatusText(PROCESSING, DEFAULT);
+    expect(statusEl.textContent).toContain(PROCESSING);
     vi.advanceTimersByTime(5000);
-    expect(statusEl.textContent).toContain('处理中');
+    expect(statusEl.textContent).toContain(PROCESSING);
   });
 
   it('new status clears pending revert timer', () => {
-    setStatusText('已取消录音', '点击说话');
+    setStatusText(CANCELLED, DEFAULT);
     vi.advanceTimersByTime(1000); // halfway through revert delay
-    setStatusText('处理中', '点击说话');
+    setStatusText(PROCESSING, DEFAULT);
     vi.advanceTimersByTime(5000); // well past original revert
-    expect(statusEl.textContent).toContain('处理中'); // should NOT have reverted
+    expect(statusEl.textContent).toContain(PROCESSING); // should NOT have reverted
   });
 
   it('transient status followed by another transient resets timer', () => {
-    setStatusText('已取消录音', '点击说话');
+    setStatusText(CANCELLED, DEFAULT);
     vi.advanceTimersByTime(2000);
-    setStatusText('没听清，再说一次？', '点击说话');
+    setStatusText(NOT_HEARD, DEFAULT);
     vi.advanceTimersByTime(2000);
     // Only 2s after second transient — should still show it
-    expect(statusEl.textContent).toBe('没听清');
+    expect(statusEl.textContent).toBe(NOT_HEARD);
     vi.advanceTimersByTime(600);
     // Now 2.6s after — should revert
-    expect(statusEl.textContent).toBe('点击说话');
+    expect(statusEl.textContent).toBe(DEFAULT);
   });
 });

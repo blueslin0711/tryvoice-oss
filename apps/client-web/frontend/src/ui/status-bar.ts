@@ -67,27 +67,27 @@ export function compactStatusText(raw: string, defaultText: string): string {
 
   if (txt.includes('前面还有一条在处理') && txt.includes('重置')) return t('status.processing');
   if (txt.includes('前面还有一条在处理') || txt.includes('已排队')) return t('status.processing');
-  if (txt.includes('会话已重置')) return t('status.reset_done');
-  if (txt.includes('重置失败')) return t('status.reset_failed');
-  if (txt.includes('重置确认超时')) return t('status.reset_timeout');
-  if (txt.includes('连接断开') || txt.includes('重连中')) return t('status.reconnecting');
-  if (txt.includes('已切换到')) return defaultText;
-  if (txt.includes('思考中')) return t('status.thinking');
-  if (txt.includes('生成语音') || txt.includes('生成回复') || txt.includes('生成中') || txt.includes('生成')) return t('status.generating');
-  if (txt.includes('还在处理') || txt.includes('处理中')) return t('status.processing');
-  if (txt.includes('识别中')) return t('status.recognizing');
-  if (txt.includes('正在听')) return t('status.listening');
-  if (txt.includes('在说') || txt.includes('朗读中')) return t('status.speaking');
-  if (txt.includes('已停止朗读')) return t('status.stopped_reading');
-  if (txt.includes('会话重置后同步失败')) return t('status.sync_failed');
-  if (txt.includes('没听清')) return t('status.not_heard');
-  if (txt.includes('语音识别失败')) return t('status.stt_failed');
-  if (txt.includes('录音太短')) return t('status.recording_too_short');
-  if (txt.includes('麦克风权限被拒绝')) return t('status.no_mic_permission');
-  if (txt.includes('请求麦克风权限')) return t('status.waiting_mic');
-  if (txt.includes('已取消录音')) return t('status.cancelled');
-  if (txt.includes('疑似回声')) return t('status.echo_suspected');
-  if (txt.includes('唤醒词失败')) return t('status.wakeword_failed');
+  if (txt.includes('会话已重置') || /sessionreset/i.test(txt)) return t('status.reset_done');
+  if (txt.includes('重置失败') || /resetfailed/i.test(txt)) return t('status.reset_failed');
+  if (txt.includes('重置确认超时') || /resettimeout/i.test(txt)) return t('status.reset_timeout');
+  if (txt.includes('连接断开') || txt.includes('重连中') || /reconnecting|disconnected/i.test(txt)) return t('status.reconnecting');
+  if (txt.includes('已切换到') || /switchedto/i.test(txt)) return defaultText;
+  if (txt.includes('思考中') || /thinking/i.test(txt)) return t('status.thinking');
+  if (txt.includes('生成语音') || txt.includes('生成回复') || txt.includes('生成中') || txt.includes('生成') || /generating/i.test(txt)) return t('status.generating');
+  if (txt.includes('还在处理') || txt.includes('处理中') || /processing/i.test(txt)) return t('status.processing');
+  if (txt.includes('识别中') || /recognizing/i.test(txt)) return t('status.recognizing');
+  if (txt.includes('正在听') || /listening/i.test(txt)) return t('status.listening');
+  if (txt.includes('在说') || txt.includes('朗读中') || /speaking/i.test(txt)) return t('status.speaking');
+  if (txt.includes('已停止朗读') || /stoppedreading/i.test(txt)) return t('status.stopped_reading');
+  if (txt.includes('会话重置后同步失败') || /syncfailed/i.test(txt)) return t('status.sync_failed');
+  if (txt.includes('没听清') || /notheard/i.test(txt)) return t('status.not_heard');
+  if (txt.includes('语音识别失败') || /sttfailed|speechrecognitionfailed/i.test(txt)) return t('status.stt_failed');
+  if (txt.includes('录音太短') || /recordingtooshort/i.test(txt)) return t('status.recording_too_short');
+  if (txt.includes('麦克风权限被拒绝') || /microphonepermissiondenied/i.test(txt)) return t('status.no_mic_permission');
+  if (txt.includes('请求麦克风权限') || /requestingmicrophone/i.test(txt)) return t('status.waiting_mic');
+  if (txt.includes('已取消录音') || /cancelled|canceled/i.test(txt)) return t('status.cancelled');
+  if (txt.includes('疑似回声') || /echosuspected/i.test(txt)) return t('status.echo_suspected');
+  if (txt.includes('唤醒词失败') || /wakeworkfailed/i.test(txt)) return t('status.wakeword_failed');
   if (
     /^\[\d+\/\d+\]/.test(txt)
     || txt.includes('准备唤醒词')
@@ -99,8 +99,8 @@ export function compactStatusText(raw: string, defaultText: string): string {
     || txt.includes('Initializing')
     || txt.includes('启动语音监听')
   ) return t('status.initializing');
-  if (txt.includes('说"') && txt.includes('开始')) return t('status.waiting_wakeword');
-  if (txt.includes('点击') && txt.includes('说话')) return t('status.click_to_talk');
+  if ((txt.includes('说"') && txt.includes('开始')) || /say".*tostart/i.test(txt)) return t('status.waiting_wakeword');
+  if ((txt.includes('点击') && txt.includes('说话')) || /clicktotalk/i.test(txt)) return t('status.click_to_talk');
 
   const cleaned = txt
     .replace(/^🔴|^🔊|^🔄/g, '')

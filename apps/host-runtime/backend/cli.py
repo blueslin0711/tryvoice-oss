@@ -724,20 +724,12 @@ def _maybe_offer_whisper_install() -> None:
 
     # No STT available — ask user
     print()
-    print(
-        f"  {_YELLOW}No speech-to-text backend detected.{_RESET}"
-    )
-    print(
-        "  Voice input requires either a Groq API key (configurable in browser)"
-    )
-    print(
-        "  or local Whisper (runs on-device, no API key needed)."
-    )
+    print(f"  {_YELLOW}No speech-to-text backend detected.{_RESET}")
+    print("  Voice input requires either a Groq API key (configurable in browser)")
+    print("  or local Whisper (runs on-device, no API key needed).")
     print()
     try:
-        answer = input(
-            f"  Install local Whisper now? (~1 GB download) [{_BOLD}y{_RESET}/n]: "
-        ).strip().lower()
+        answer = input(f"  Install local Whisper now? (~1 GB download) [{_BOLD}y{_RESET}/n]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         print()
         return
@@ -753,10 +745,7 @@ def _maybe_offer_whisper_install() -> None:
             )
             print(f"\n  {_GREEN}Local Whisper installed successfully.{_RESET}\n")
         except subprocess.CalledProcessError:
-            print(
-                f"\n  {_RED}Installation failed.{_RESET}"
-                " You can install manually: pip install faster-whisper\n"
-            )
+            print(f"\n  {_RED}Installation failed.{_RESET} You can install manually: pip install faster-whisper\n")
     else:
         print(
             "\n  Skipped. You can configure a Groq API key in the browser Setup Wizard,"
