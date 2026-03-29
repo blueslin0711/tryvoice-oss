@@ -404,3 +404,7 @@ FormData {
 4. **前端阶段 4-5**：验证 + 安装导出
 5. **测试覆盖**：单元测试 + E2E 测试
 6. **错误处理完善**：各场景错误处理
+
+## 实现计划
+
+详见：`docs/superpowers/plans/2026-03-29-wakeword-training-tool.md`
