@@ -1,0 +1,26 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装旧版 PyTorch（支持 opset 13）
+RUN pip install --no-cache-dir \
+    torch==2.0.1 \
+    torchaudio==2.0.2
+
+# 安装其他依赖
+RUN pip install --no-cache-dir \
+    onnxruntime \
+    onnx \
+    scipy \
+    numpy
+
+# 复制脚本
+COPY scripts/train_wakeword_v3.py /app/
+COPY scripts/export_model.py /app/
+
+ENTRYPOINT ["python", "/app/train_wakeword_v3.py"]

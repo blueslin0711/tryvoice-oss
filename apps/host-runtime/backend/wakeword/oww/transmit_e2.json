@@ -1,6 +1,5 @@
 {
-  "keyword": "Transmit",
-  "pipeline": "Set2",
+  "keyword": "Transmit E2",
   "inputShape": "2d",
   "version": 1
 }
