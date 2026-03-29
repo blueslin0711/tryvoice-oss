@@ -116,6 +116,21 @@ interface AudioSample {
   rms: number;
   valid: boolean;
 }
+
+interface TrainingProgress {
+  step: number;
+  totalSteps: number;
+  loss: number;
+  accuracy: number;
+  phase: 'preparing' | 'training' | 'exporting';
+}
+
+interface ValidationResult {
+  sampleId: string;
+  detected: boolean;         // 是否触发唤醒词
+  confidence: number;        // 置信度 (0-1)
+  latencyMs: number;         // 检测延迟 (毫秒)
+}
 ```
 
 ### 复用现有代码
@@ -153,6 +168,18 @@ interface AudioSample {
 | `voice/training_service.py` | 训练任务管理器 |
 | `voice/tts_generator.py` | edge-tts 调用封装 |
 | `wakeword/temp/` | 训练临时存储目录 |
+
+### 负向样本处理
+
+训练唤醒词模型需要负向样本（不包含唤醒词的语音）。处理方案：
+
+| 来源 | 说明 |
+|------|------|
+| **项目内置负向样本库** | 复用 `scripts/generate_samples.py` 中预定义的中文短语，项目自带约 20 个负向短语 |
+| **其他唤醒词样本** | 使用项目中其他已训练唤醒词的正向样本作为负向样本（如用户训练「小助手」时，「大橘大橘」的样本可作为负向） |
+| **动态 TTS 生成** | 当负向样本不足时，后端调用 edge-tts 生成额外的中文短语样本 |
+
+后端训练服务自动处理负向样本组合，无需用户手动提供。默认负向样本数量与正向样本数量相等。
 
 ### API 详情
 
@@ -215,6 +242,8 @@ FormData {
 }
 ```
 
+**说明**：`sessionId` 用于关联上传的样本，`taskId` 用于追踪训练进度。前端应保存 `taskId` 以便轮询状态，用户刷新页面后可通过 `localStorage` 中保存的 `taskId` 恢复状态。
+
 **GET /wakeword/train/status/{taskId}**
 
 响应：
@@ -240,7 +269,7 @@ FormData {
   "keyword": "小助手",
   "modelUrl": "/wakeword/temp/小助手.onnx",
   "dataUrl": "/wakeword/temp/小助手.onnx.data",
-  "metaUrl": "/wakeword/temp/大橘大橘.json"
+  "metaUrl": "/wakeword/temp/小助手.json"
 }
 ```
 
