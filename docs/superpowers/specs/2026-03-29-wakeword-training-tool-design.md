@@ -156,6 +156,7 @@ interface ValidationResult {
 | `POST /wakeword/train/start` | 启动训练任务 |
 | `GET /wakeword/train/status/{taskId}` | 查询训练进度 |
 | `GET /wakeword/train/result/{taskId}` | 获取训练结果 |
+| `DELETE /wakeword/train/{taskId}` | 取消训练任务，清理临时资源 |
 | `POST /wakeword/train/install` | 安装模型到项目 |
 
 ### 后端模块结构
@@ -290,6 +291,29 @@ FormData {
   "installedPath": "apps/host-runtime/backend/wakeword/oww/小助手.onnx"
 }
 ```
+
+**DELETE /wakeword/train/{taskId}**
+
+用途：取消正在运行的训练任务，清理临时存储资源。
+
+响应：
+```json
+{
+  "success": true,
+  "message": "Training cancelled and resources cleaned up"
+}
+```
+
+### 训练模式选择规则
+
+训练模式 (`new` vs `finetune`) 由前端根据唤醒词是否已存在自动判断：
+
+| 条件 | 训练模式 |
+|------|----------|
+| 唤醒词不存在于项目中 | `new` — 后端 PyTorch 全量训练 |
+| 唤醒词已存在于项目中 | `finetune` — 浏览器端 TensorFlow.js 微调 |
+
+前端在阶段 1 输入唤醒词后，调用 `GET /config` 检查 `wwMapping` 中是否已有该唤醒词，自动设置 `trainingMode`。用户无需手动选择。
 
 ## 数据流
 
