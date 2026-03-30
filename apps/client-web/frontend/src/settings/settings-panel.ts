@@ -39,6 +39,7 @@ import {
   getOwwPipelines, getActivePipeline, setActivePipeline,
 } from '../wakeword/wakeword-manager';
 import { startPersonalizationWizard } from '../wakeword/personalization-wizard';
+import { startTrainingTool } from '../wakeword/training-tool';
 import { getVoiceprintHistory, clearVoiceprintHistory, type VoiceprintHistoryEntry } from '../wakeword/voiceprint-verifier';
 import { syncManager } from '../network/sync';
 import * as ws from '../network/ws-client';
@@ -1915,6 +1916,12 @@ function initGlobalSettings(): void {
 
   personalizeBtn?.addEventListener('click', () => {
     startPersonalizationWizard(OWW_KEYWORDS, OWW_KEYWORD_TO_MODEL, OWW_MODEL_META);
+  });
+
+  // Wakeword training tool
+  const trainingBtn = document.getElementById('wakeword-training-btn');
+  trainingBtn?.addEventListener('click', () => {
+    startTrainingTool();
   });
 
   // Pipeline debug selector

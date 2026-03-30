@@ -123,7 +123,10 @@ export async function validateBatchSamples(
       for (let j = 0; j < features[0].length - 15; j++) {
         const seq = new Float32Array(16 * 96);
         for (let k = 0; k < 16; k++) {
-          seq.set(features[0][j + k], k * 96);
+          const frame = features[0][j + k];
+          if (frame && typeof frame === 'object' && 'length' in frame) {
+            seq.set(frame as ArrayLike<number>, k * 96);
+          }
         }
         sequences.push(seq);
       }
