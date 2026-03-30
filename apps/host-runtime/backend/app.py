@@ -331,11 +331,13 @@ from backend.routes.settings import router as settings_router  # noqa: E402
 from backend.routes.static import router as static_router  # noqa: E402
 from backend.routes.tts import router as tts_router  # noqa: E402
 from backend.routes.wakeword import router as wakeword_router  # noqa: E402
+from backend.routes.wakeword_training import router as wakeword_training_router  # noqa: E402
 from backend.ws.handler import router as ws_router  # noqa: E402
 
 app.include_router(tts_router)
 app.include_router(history_router)
 app.include_router(wakeword_router)
+app.include_router(wakeword_training_router)
 app.include_router(settings_router)
 app.include_router(misc_router)
 app.include_router(auth_router)
