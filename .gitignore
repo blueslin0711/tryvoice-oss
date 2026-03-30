@@ -32,6 +32,7 @@ node_modules/
 
 # Custom wake words (personal models; built-in keywords are tracked)
 apps/host-runtime/backend/wakeword/嗨川川*.ppn
+apps/host-runtime/backend/wakeword/temp/
 
 # Internal planning docs
 EXECUTION_PLAN*.md
