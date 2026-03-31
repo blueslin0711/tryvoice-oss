@@ -147,8 +147,6 @@ export function renderSampleCollection(
                      state.ttsSamples.filter(s => s.valid).length;
   const totalCount = state.targetSampleCount;
   const progress = Math.min(validCount / totalCount, 1);
-  // 不再强制要求样本数量，始终允许继续
-  const canProceed = true;
 
   const recordBtnColor = state.recordingInProgress ? '#f44336' : '#667eea';
   const recordBtnText = state.recordingInProgress ? '停止录音' : '开始录音';
@@ -166,29 +164,49 @@ export function renderSampleCollection(
       <div style="background:#111122;border-radius:12px;padding:16px;margin-bottom:20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <span style="font-size:13px;color:#888;">样本进度</span>
-          <span style="font-size:13px;color:#667eea;">${validCount} 个（可选）</span>
+          <span style="font-size:13px;color:#667eea;">${validCount} 个</span>
         </div>
         <div style="background:#0a0a18;border-radius:4px;height:8px;overflow:hidden;">
           <div style="background:linear-gradient(90deg,#667eea,#764ba2);height:100%;width:${progress * 100}%;"></div>
         </div>
         <div style="font-size:12px;color:#666;margin-top:8px;">
-          ${validCount > 0 ? `已录制 ${validCount} 个样本` : '可跳过录制，训练时自动生成 TTS 样本'}
+          ${validCount > 0 ? `已有 ${validCount} 个样本，可直接训练` : '可直接训练，系统会自动生成 TTS 样本'}
         </div>
       </div>
 
       <!-- Recording Section -->
-      <div style="background:#111122;border-radius:12px;padding:20px;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:8px;">麦克风录制（可选）</div>
-        <div style="font-size:12px;color:#666;margin-bottom:16px;">录制真实语音样本可提高识别准确率</div>
+      <div style="background:#111122;border-radius:12px;padding:20px;margin-bottom:12px;">
+        <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:4px;">麦克风录制</div>
+        <div style="font-size:12px;color:#666;margin-bottom:16px;">录制真实语音可提高识别准确率</div>
 
-        <div style="text-align:center;margin-bottom:16px;">
+        <div style="text-align:center;">
           <button
             id="tt-record-btn"
-            style="width:80px;height:80px;border-radius:50%;border:none;background:${recordBtnColor};cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(102,126,234,0.3);"
+            style="width:70px;height:70px;border-radius:50%;border:none;background:${recordBtnColor};cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(102,126,234,0.3);"
           >
-            <div style="width:24px;height:24px;background:#fff;border-radius:${state.recordingInProgress ? '4px' : '50%'};"></div>
+            <div style="width:20px;height:20px;background:#fff;border-radius:${state.recordingInProgress ? '4px' : '50%'};"></div>
           </button>
-          <div style="font-size:13px;color:#888;margin-top:12px;">${recordBtnText}</div>
+          <div style="font-size:12px;color:#888;margin-top:8px;">${recordBtnText}</div>
+        </div>
+      </div>
+
+      <!-- TTS Generation Section -->
+      <div style="background:#111122;border-radius:12px;padding:16px;margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:8px;">TTS 合成</div>
+        <div style="font-size:12px;color:#666;margin-bottom:12px;">使用语音合成生成训练样本</div>
+        <div style="display:flex;gap:8px;">
+          <button
+            id="tt-tts-5-btn"
+            style="flex:1;padding:10px;font-size:13px;background:transparent;border:1px solid #2a2a3a;border-radius:6px;color:#888;cursor:pointer;"
+          >+5 个</button>
+          <button
+            id="tt-tts-10-btn"
+            style="flex:1;padding:10px;font-size:13px;background:transparent;border:1px solid #2a2a3a;border-radius:6px;color:#888;cursor:pointer;"
+          >+10 个</button>
+          <button
+            id="tt-tts-20-btn"
+            style="flex:1;padding:10px;font-size:13px;background:#667eea;border:none;border-radius:6px;color:#fff;cursor:pointer;"
+          >+20 个</button>
         </div>
       </div>
 
@@ -196,7 +214,7 @@ export function renderSampleCollection(
         id="tt-next-btn"
         style="width:100%;padding:14px;font-size:15px;font-weight:600;background:#667eea;border:none;border-radius:8px;color:#fff;cursor:pointer;"
       >
-        下一步：开始训练
+        开始训练
       </button>
     </div>
   `;
@@ -210,6 +228,9 @@ export function renderSampleCollection(
       handlers.onStartRecording();
     }
   });
+  document.getElementById('tt-tts-5-btn')?.addEventListener('click', () => handlers.onGenerateTTS(5));
+  document.getElementById('tt-tts-10-btn')?.addEventListener('click', () => handlers.onGenerateTTS(10));
+  document.getElementById('tt-tts-20-btn')?.addEventListener('click', () => handlers.onGenerateTTS(20));
 }
 
 // ──────────────────────────────────────────────

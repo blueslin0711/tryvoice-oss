@@ -330,9 +330,27 @@ function renderSamplesStage(): void {
     },
     onGenerateTTS: async (count: number) => {
       if (state) {
+        log.info('Generating TTS samples', { count });
         const result = await generateTTSSamples(state.keyword, count);
         if (result.success) {
           state.sessionId = result.sessionId || null;
+          // 更新 TTS 样本计数显示
+          state.ttsSamples = state.ttsSamples || [];
+          // 添加虚拟样本用于显示（实际样本在后端 session 中）
+          for (let i = 0; i < (result.generatedCount || count); i++) {
+            state.ttsSamples.push({
+              id: `tts_${Date.now()}_${i}`,
+              source: 'tts',
+              audioData: new Float32Array(0),
+              duration: 0,
+              rms: 0,
+              valid: true,
+            });
+          }
+          log.info('TTS samples generated', { count: result.generatedCount });
+          renderCurrentStage();
+        } else {
+          log.error('Failed to generate TTS samples', { error: result.error });
         }
       }
     },
@@ -343,7 +361,7 @@ function renderSamplesStage(): void {
       }
     },
     onNext: () => {
-      if (state && canProceedToTraining(state)) {
+      if (state) {
         state.stage = 'training';
         startTraining();
         renderCurrentStage();
@@ -565,6 +583,10 @@ async function pollTrainingStatus(): Promise<void> {
       renderCurrentStage();
       setTimeout(pollTrainingStatus, 1000);
     } else if (data.status === 'completed') {
+      // 保存模型 URL
+      if (data.modelUrl) {
+        state.modelFile = data.modelUrl;
+      }
       state.stage = 'validation';
       renderCurrentStage();
     } else if (data.status === 'failed') {

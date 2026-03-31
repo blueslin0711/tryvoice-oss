@@ -550,7 +550,7 @@ class TrainingService:
         if not task:
             return {"status": "not_found", "error": "Task not found"}
 
-        return {
+        result = {
             "status": task.status,
             "progress": {
                 "step": task.current_step,
@@ -561,6 +561,16 @@ class TrainingService:
             "modelReady": task.status == "completed" and task.model_path is not None,
             "error": task.error,
         }
+
+        # Include model URL when completed
+        if task.status == "completed" and task.model_path:
+            session = self._sessions.get(task.session_id)
+            if session:
+                safe_name = session.keyword.replace(" ", "_")
+                result["modelUrl"] = f"/wakeword/models/{safe_name}.onnx"
+                result["modelName"] = f"{safe_name}.onnx"
+
+        return result
 
     def get_task_result(self, task_id: str) -> dict | None:
         """Get training result for a completed task."""

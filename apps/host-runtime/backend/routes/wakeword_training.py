@@ -340,3 +340,45 @@ async def install_model(request: dict):
         "success": True,
         "installedPath": installed_path,
     })
+
+
+@router.get("/wakeword/models/{filename}")
+async def download_model(filename: str):
+    """Download a trained model file.
+
+    Args:
+        filename: Model filename (e.g., "我的唤醒词.onnx")
+
+    Returns:
+        Model file
+    """
+    from fastapi.responses import FileResponse
+    from backend.paths import WAKEWORD_DIR
+
+    # Security: only allow .onnx, .onnx.data, .json files
+    if not filename.endswith(('.onnx', '.onnx.data', '.json')):
+        return JSONResponse(
+            {"success": False, "error": "Invalid file type"},
+            status_code=400,
+        )
+
+    # Security: prevent path traversal
+    if '..' in filename or '/' in filename:
+        return JSONResponse(
+            {"success": False, "error": "Invalid filename"},
+            status_code=400,
+        )
+
+    model_path = WAKEWORD_DIR / "oww" / filename
+
+    if not model_path.exists():
+        return JSONResponse(
+            {"success": False, "error": "Model not found"},
+            status_code=404,
+        )
+
+    return FileResponse(
+        path=str(model_path),
+        filename=filename,
+        media_type="application/octet-stream",
+    )
