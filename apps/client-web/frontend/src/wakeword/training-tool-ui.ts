@@ -301,6 +301,11 @@ export function renderValidation(
   };
   const successRate = stats.total > 0 ? stats.detected / stats.total : 0;
 
+  // 实时测试状态
+  const isTesting = state.realtimeTestingActive;
+  const testBtnColor = isTesting ? '#f44336' : '#667eea';
+  const testBtnText = isTesting ? '停止测试' : '开始实时测试';
+
   overlay.innerHTML = `
     <div style="width:100%;max-width:450px;padding:24px;">
       <button id="tt-back-btn" style="float:left;background:transparent;border:none;color:#666;cursor:pointer;font-size:22px;padding:0;margin-bottom:8px;">←</button>
@@ -323,6 +328,27 @@ export function renderValidation(
         </div>
       ` : ''}
 
+      <!-- 实时测试 -->
+      <div style="background:#111122;border-radius:12px;padding:16px;margin-bottom:12px;">
+        <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:8px;">实时测试</div>
+        <div style="font-size:12px;color:#666;margin-bottom:12px;">对着麦克风说唤醒词，测试识别效果</div>
+        <button
+          id="tt-realtime-btn"
+          style="width:100%;padding:12px;font-size:14px;background:${testBtnColor};border:none;border-radius:8px;color:#fff;cursor:pointer;"
+        >
+          ${testBtnText}
+        </button>
+        ${isTesting ? `
+          <div style="margin-top:12px;text-align:center;">
+            <div style="font-size:13px;color:#667eea;">正在监听...</div>
+            <div style="font-size:24px;margin-top:8px;">🎤</div>
+            ${state.realtimeDetectionCount !== undefined ? `
+              <div style="font-size:13px;color:#4CAF50;margin-top:8px;">已检测到 ${state.realtimeDetectionCount} 次</div>
+            ` : ''}
+          </div>
+        ` : ''}
+      </div>
+
       <button
         id="tt-batch-btn"
         style="width:100%;padding:12px;font-size:14px;background:transparent;border:1px solid #2a2a3a;border-radius:8px;color:#888;cursor:pointer;margin-bottom:12px;"
@@ -342,6 +368,13 @@ export function renderValidation(
   document.getElementById('tt-back-btn')?.addEventListener('click', handlers.onBack);
   document.getElementById('tt-next-btn')?.addEventListener('click', handlers.onNext);
   document.getElementById('tt-batch-btn')?.addEventListener('click', handlers.onRunBatchTest);
+  document.getElementById('tt-realtime-btn')?.addEventListener('click', () => {
+    if (state.realtimeTestingActive) {
+      handlers.onStopRealtimeTest();
+    } else {
+      handlers.onStartRealtimeTest();
+    }
+  });
 }
 
 // ──────────────────────────────────────────────

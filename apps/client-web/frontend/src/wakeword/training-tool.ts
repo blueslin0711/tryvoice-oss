@@ -67,6 +67,8 @@ export interface TrainingToolState {
 
   // Stage 4: Validation
   validationResults: ValidationResult[];
+  realtimeTestingActive: boolean;
+  realtimeDetectionCount: number;
 
   // Stage 5: Install
   modelFile: string | null;
@@ -93,6 +95,8 @@ export function createInitialState(): TrainingToolState {
     taskId: null,
     trainingProgress: null,
     validationResults: [],
+    realtimeTestingActive: false,
+    realtimeDetectionCount: 0,
     modelFile: null,
     modelData: null,
   };
@@ -387,11 +391,18 @@ function renderValidationStage(): void {
   if (!state) return;
 
   UI.renderValidation(state, {
-    onStartRealtimeTest: () => {
-      // Start realtime detection
+    onStartRealtimeTest: async () => {
+      if (!state) return;
+      state.realtimeTestingActive = true;
+      state.realtimeDetectionCount = 0;
+      renderCurrentStage();
+      await startRealtimeDetection();
     },
     onStopRealtimeTest: () => {
-      // Stop realtime detection
+      if (!state) return;
+      state.realtimeTestingActive = false;
+      stopRealtimeDetection();
+      renderCurrentStage();
     },
     onRunBatchTest: async () => {
       if (state && collector) {
@@ -406,17 +417,106 @@ function renderValidationStage(): void {
     },
     onBack: () => {
       if (state) {
+        stopRealtimeDetection();
         state.stage = 'samples';
         renderCurrentStage();
       }
     },
     onNext: () => {
       if (state) {
+        stopRealtimeDetection();
         state.stage = 'install';
         renderCurrentStage();
       }
     },
   });
+}
+
+// 实时检测状态
+let realtimeMediaStream: MediaStream | null = null;
+let realtimeAudioContext: AudioContext | null = null;
+
+async function startRealtimeDetection(): Promise<void> {
+  if (!state?.modelFile) {
+    log.warn('No model file available for realtime detection');
+    return;
+  }
+
+  try {
+    // 获取麦克风流
+    realtimeMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    realtimeAudioContext = new AudioContext({ sampleRate: 16000 });
+    const source = realtimeAudioContext.createMediaStreamSource(realtimeMediaStream);
+
+    // 创建音频处理器
+    const processor = realtimeAudioContext.createScriptProcessor(4096, 1, 1);
+    let audioBuffer: Float32Array[] = [];
+    const chunkSize = 1280; // 80ms at 16kHz
+
+    processor.onaudioprocess = async (e) => {
+      if (!state?.realtimeTestingActive) return;
+
+      const inputData = e.inputBuffer.getChannelData(0);
+      audioBuffer.push(new Float32Array(inputData));
+
+      // 合并缓冲区
+      if (audioBuffer.length >= 10) { // 约 400ms
+        const totalLength = audioBuffer.reduce((sum, chunk) => sum + chunk.length, 0);
+        const audio = new Float32Array(totalLength);
+        let offset = 0;
+        for (const chunk of audioBuffer) {
+          audio.set(chunk, offset);
+          offset += chunk.length;
+        }
+        audioBuffer = [];
+
+        // 发送到后端检测
+        try {
+          const response = await fetch('/wakeword/detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              keyword: state.keyword,
+              audio: Array.from(audio),
+            }),
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            if (result.detected && state) {
+              state.realtimeDetectionCount = (state.realtimeDetectionCount || 0) + 1;
+              renderCurrentStage();
+            }
+          }
+        } catch (e) {
+          // 忽略检测错误
+        }
+      }
+    };
+
+    source.connect(processor);
+    processor.connect(realtimeAudioContext.destination);
+
+    log.info('Started realtime detection', { keyword: state.keyword });
+  } catch (e) {
+    log.error('Failed to start realtime detection', { error: String(e) });
+    if (state) {
+      state.realtimeTestingActive = false;
+      renderCurrentStage();
+    }
+  }
+}
+
+function stopRealtimeDetection(): void {
+  if (realtimeMediaStream) {
+    realtimeMediaStream.getTracks().forEach(t => t.stop());
+    realtimeMediaStream = null;
+  }
+  if (realtimeAudioContext) {
+    realtimeAudioContext.close();
+    realtimeAudioContext = null;
+  }
+  log.info('Stopped realtime detection');
 }
 
 function renderInstallStage(): void {

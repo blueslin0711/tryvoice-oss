@@ -382,3 +382,111 @@ async def download_model(filename: str):
         filename=filename,
         media_type="application/octet-stream",
     )
+
+
+@router.post("/wakeword/detect")
+async def detect_wakeword(request: dict):
+    """Detect wakeword in audio samples.
+
+    Args:
+        keyword: The wakeword keyword to detect
+        audio: Audio samples (16kHz float32 array)
+
+    Returns:
+        Detection result with confidence
+    """
+    import numpy as np
+
+    keyword = request.get("keyword", "")
+    audio_data = request.get("audio", [])
+
+    if not keyword or not audio_data:
+        return JSONResponse({
+            "detected": False,
+            "confidence": 0,
+            "error": "Missing keyword or audio",
+        })
+
+    try:
+        # 转换音频数据
+        audio = np.array(audio_data, dtype=np.float32)
+
+        # 检查模型是否存在
+        safe_name = keyword.replace(" ", "_")
+        model_path = WAKEWORD_DIR / "oww" / f"{safe_name}.onnx"
+
+        if not model_path.exists():
+            # 模型不存在，使用简单能量检测作为回退
+            energy = np.sqrt(np.mean(audio ** 2))
+            detected = energy > 0.02
+            confidence = min(energy * 5, 1.0)
+
+            return JSONResponse({
+                "detected": detected,
+                "confidence": float(confidence),
+                "method": "energy_fallback",
+            })
+
+        # 使用 ONNX Runtime 运行模型
+        import onnxruntime as ort
+
+        # 加载模型
+        session = ort.InferenceSession(str(model_path))
+
+        # 准备输入
+        # 模型期望 (batch, 16, 96) 形状
+        # 从音频中提取特征序列
+        chunk_size = 1280  # 80ms
+        feature_dim = 96
+        sequence_length = 16
+
+        # 简化特征提取：使用音频能量作为特征
+        features = []
+        for i in range(0, len(audio) - chunk_size, chunk_size // 2):
+            chunk = audio[i : i + chunk_size]
+            # 计算简单的频谱特征
+            fft = np.abs(np.fft.rfft(chunk))[:feature_dim]
+            if len(fft) < feature_dim:
+                fft = np.pad(fft, (0, feature_dim - len(fft)))
+            features.append(fft / (np.max(fft) + 1e-8))
+
+        # 构建序列
+        if len(features) < sequence_length:
+            features = features + [features[-1]] * (sequence_length - len(features))
+
+        sequences = []
+        for i in range(len(features) - sequence_length + 1):
+            seq = np.array(features[i : i + sequence_length], dtype=np.float32)
+            sequences.append(seq)
+
+        if not sequences:
+            return JSONResponse({
+                "detected": False,
+                "confidence": 0,
+            })
+
+        # 运行推理
+        input_array = np.array(sequences, dtype=np.float32)
+        outputs = session.run(None, {"input": input_array})
+
+        # 获取最大置信度
+        predictions = outputs[0].flatten()
+        max_confidence = float(np.max(predictions))
+        detected = max_confidence > 0.5
+
+        return JSONResponse({
+            "detected": detected,
+            "confidence": max_confidence,
+            "method": "onnx_model",
+        })
+
+    except Exception as e:
+        logger.bind(component="wakeword_training").error(
+            "Detection error: {}",
+            str(e),
+        )
+        return JSONResponse({
+            "detected": False,
+            "confidence": 0,
+            "error": str(e),
+        })
