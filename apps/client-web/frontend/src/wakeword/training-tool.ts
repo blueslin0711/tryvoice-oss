@@ -118,7 +118,7 @@ export function resetState(): void {
 
 const MIN_KEYWORD_LENGTH = 2;
 const MAX_KEYWORD_LENGTH = 8;
-const MIN_SAMPLES_REQUIRED = 5;
+// 样本数量不再强制要求，用户可以完全依赖 TTS 生成
 
 export function validateKeyword(keyword: string): boolean {
   if (!keyword || keyword.trim().length === 0) {
@@ -142,9 +142,9 @@ export function canProceedToSamples(s: TrainingToolState): boolean {
 }
 
 export function canProceedToTraining(s: TrainingToolState): boolean {
-  const totalSamples = s.micSamples.filter(sample => sample.valid).length +
-                       s.ttsSamples.filter(sample => sample.valid).length;
-  return totalSamples >= MIN_SAMPLES_REQUIRED;
+  // 不再强制要求样本数量，允许用户跳过录制完全使用 TTS 生成
+  // 训练时会自动生成 TTS 样本
+  return true;
 }
 
 export function canProceedToValidation(s: TrainingToolState): boolean {
@@ -284,7 +284,9 @@ function renderKeywordStage(): void {
         if (state.keywordValid) {
           state.trainingMode = await detectTrainingMode(keyword);
         }
-        renderCurrentStage();
+        // Only update button state, don't rebuild input field
+        // This preserves cursor position and input focus
+        UI.updateKeywordInputButtonState(state);
       }
     },
     onNext: () => {
@@ -483,16 +485,43 @@ async function startTraining(): Promise<void> {
   if (!state || !collector) return;
 
   try {
-    // Upload samples
-    const formData = await collector.exportForUpload(state.keyword);
-    const uploadResult = await uploadSamples(formData);
+    const validSamples = collector.getValidSamples();
+    let sessionId: string | null = null;
 
-    if (!uploadResult.success) {
-      log.error('Failed to upload samples', { error: uploadResult.error });
+    if (validSamples.length > 0) {
+      // 有录制的样本，先上传
+      log.info('Uploading recorded samples', { count: validSamples.length });
+      const formData = await collector.exportForUpload(state.keyword);
+      const uploadResult = await uploadSamples(formData);
+
+      if (uploadResult.success) {
+        sessionId = uploadResult.sessionId || null;
+        log.info('Samples uploaded', { sessionId, count: uploadResult.sampleCount });
+      } else {
+        log.warn('Failed to upload samples, will use TTS', { error: uploadResult.error });
+      }
+    }
+
+    // 如果没有 sessionId（没有录制样本或上传失败），自动生成 TTS 样本
+    if (!sessionId) {
+      log.info('Generating TTS samples for training');
+      const ttsResult = await generateTTSSamples(state.keyword, 20); // 生成 20 个 TTS 样本
+
+      if (!ttsResult.success) {
+        log.error('Failed to generate TTS samples', { error: ttsResult.error });
+        return;
+      }
+
+      sessionId = ttsResult.sessionId || null;
+      log.info('TTS samples generated', { sessionId, count: ttsResult.generatedCount });
+    }
+
+    if (!sessionId) {
+      log.error('No session ID available for training');
       return;
     }
 
-    state.sessionId = uploadResult.sessionId || null;
+    state.sessionId = sessionId;
 
     // Start training
     const resp = await fetch('/wakeword/train/start', {
@@ -509,6 +538,9 @@ async function startTraining(): Promise<void> {
       const data = await resp.json();
       state.taskId = data.taskId;
       pollTrainingStatus();
+    } else {
+      const error = await resp.text();
+      log.error('Failed to start training', { error, status: resp.status });
     }
   } catch (e) {
     log.error('Failed to start training', { error: String(e) });

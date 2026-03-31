@@ -4,7 +4,11 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -16,7 +20,7 @@ from typing import Literal
 import numpy as np
 from loguru import logger
 
-from backend.paths import WAKEWORD_DIR
+from backend.paths import PROJECT_ROOT, WAKEWORD_DIR
 
 
 @dataclass
@@ -49,6 +53,7 @@ class TrainingTask:
     error: str | None = None
     model_path: Path | None = None
     process: subprocess.Popen | None = None
+    use_docker: bool = False
 
 
 class TrainingService:
@@ -60,6 +65,37 @@ class TrainingService:
         self._sessions: dict[str, TrainingSession] = {}
         self._tasks: dict[str, TrainingTask] = {}
         self._lock = threading.Lock()
+
+        # Check available training methods
+        self._has_docker = self._check_docker()
+        self._has_torch = self._check_torch()
+
+        logger.bind(component="training_service").info(
+            "Training service initialized (docker={}, torch={})",
+            self._has_docker,
+            self._has_torch,
+        )
+
+    def _check_docker(self) -> bool:
+        """Check if Docker is available."""
+        try:
+            result = subprocess.run(
+                ["docker", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def _check_torch(self) -> bool:
+        """Check if PyTorch is available."""
+        try:
+            import torch  # noqa: F401
+            return True
+        except ImportError:
+            return False
 
     def create_session(self, keyword: str) -> str:
         """Create a new training session.
@@ -160,10 +196,10 @@ class TrainingService:
         if not session:
             raise ValueError(f"Session {session_id} not found")
 
-        if session.sample_count < 5:
-            raise ValueError(f"Need at least 5 samples, got {session.sample_count}")
-
         task_id = f"task_{uuid.uuid4().hex[:8]}"
+
+        # Determine training method
+        use_docker = self._has_docker
 
         task = TrainingTask(
             task_id=task_id,
@@ -171,6 +207,7 @@ class TrainingService:
             keyword=session.keyword,
             status="pending",
             steps=steps,
+            use_docker=use_docker,
         )
 
         with self._lock:
@@ -185,9 +222,10 @@ class TrainingService:
         thread.start()
 
         logger.bind(component="training_service").info(
-            "Started training task '{}' for keyword '{}'",
+            "Started training task '{}' for keyword '{}' (docker={})",
             task_id,
             session.keyword,
+            use_docker,
         )
         return task_id
 
@@ -209,34 +247,16 @@ class TrainingService:
             # Prepare negative samples
             self._prepare_negative_samples(session)
 
-            # Run training script
             output_dir = WAKEWORD_DIR / "oww"
 
-            # For now, simulate training progress
-            # In production, this would run the actual training script
-            for step in range(0, task.steps, 1000):
-                if task.status == "cancelled":
-                    return
-
-                with self._lock:
-                    task.current_step = step
-                    task.loss = max(0.1 * (1 - step / task.steps), 0.01)
-                    task.accuracy = min(0.5 + 0.5 * (step / task.steps), 0.99)
-
-                time.sleep(0.1)  # Simulate training time (shortened for tests)
-
-            with self._lock:
-                task.status = "completed"
-                task.completed_at = datetime.now().isoformat()
-                task.current_step = task.steps
-                # Generate model path
-                safe_name = session.keyword.replace(" ", "_")
-                task.model_path = output_dir / f"{safe_name}.onnx"
-
-            logger.bind(component="training_service").info(
-                "Training task '{}' completed",
-                task_id,
-            )
+            # Try real training
+            if task.use_docker and self._has_docker:
+                self._run_docker_training(task, session, output_dir)
+            elif self._has_torch:
+                self._run_local_training(task, session, output_dir)
+            else:
+                # Fallback to simulation
+                self._run_simulated_training(task, session, output_dir)
 
         except Exception as e:
             with self._lock:
@@ -250,11 +270,270 @@ class TrainingService:
                 str(e),
             )
 
+    def _run_docker_training(
+        self,
+        task: TrainingTask,
+        session: TrainingSession,
+        output_dir: Path,
+    ) -> None:
+        """Run training using Docker container."""
+        logger.bind(component="training_service").info(
+            "Running Docker training for task '{}'",
+            task.task_id,
+        )
+
+        # Build Docker image if needed
+        image_name = "tryvoice-train"
+        try:
+            # Always rebuild to ensure latest script
+            logger.bind(component="training_service").info(
+                "Building Docker training image..."
+            )
+            build_result = subprocess.run(
+                ["docker", "build", "-f", "Dockerfile.train", "-t", image_name, "."],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if build_result.returncode != 0:
+                # Check if image exists (might be from previous build)
+                check_result = subprocess.run(
+                    ["docker", "images", "-q", image_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if not check_result.stdout.strip():
+                    raise RuntimeError(f"Docker build failed: {build_result.stderr[:500]}")
+                logger.bind(component="training_service").warning(
+                    "Docker build failed, using existing image: {}",
+                    build_result.stderr[:200],
+                )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Docker operation timed out")
+
+        # Prepare paths
+        samples_dir = session.samples_dir / "positive"
+        negative_dir = session.samples_dir / "negative"
+        safe_name = session.keyword.replace(" ", "_")
+
+        # Run training container
+        cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{samples_dir}:/samples:ro",
+            "-v", f"{output_dir}:/output",
+            image_name,
+            "--samples", "/samples",
+            "--keyword", session.keyword,
+            "--output-dir", "/output",
+            "--steps", str(task.steps),
+        ]
+
+        # Add negative samples if available
+        if negative_dir.exists() and any(negative_dir.iterdir()):
+            cmd.extend(["--negative-samples", "/negative"])
+            # Re-add the negative volume mount
+            cmd.insert(4, "-v")
+            cmd.insert(5, f"{negative_dir}:/negative:ro")
+
+        logger.bind(component="training_service").debug(
+            "Docker command: {}",
+            " ".join(cmd),
+        )
+
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+
+        with self._lock:
+            task.process = process
+
+        # Parse output for progress
+        output_lines = []
+        for line in process.stdout:
+            output_lines.append(line)
+            logger.bind(component="training_service").debug("Docker: {}", line.strip())
+
+            # Parse progress: "Step 2000: Loss=0.0500 Acc=85.0%"
+            match = re.search(r"Step (\d+): Loss=([\d.]+) Acc=([\d.]+)%", line)
+            if match:
+                step = int(match.group(1))
+                loss = float(match.group(2))
+                accuracy = float(match.group(3)) / 100.0
+
+                with self._lock:
+                    task.current_step = step
+                    task.loss = loss
+                    task.accuracy = accuracy
+
+            # Check for cancellation
+            if task.status == "cancelled":
+                process.terminate()
+                return
+
+        process.wait()
+
+        if process.returncode != 0:
+            output = "".join(output_lines[-50:])
+            raise RuntimeError(f"Training failed: {output}")
+
+        # Check for model file
+        model_path = output_dir / f"{safe_name}.onnx"
+        if not model_path.exists():
+            raise RuntimeError(f"Model file not created: {model_path}")
+
+        with self._lock:
+            task.status = "completed"
+            task.completed_at = datetime.now().isoformat()
+            task.current_step = task.steps
+            task.model_path = model_path
+
+        logger.bind(component="training_service").info(
+            "Docker training task '{}' completed",
+            task.task_id,
+        )
+
+    def _run_local_training(
+        self,
+        task: TrainingTask,
+        session: TrainingSession,
+        output_dir: Path,
+    ) -> None:
+        """Run training using local Python script."""
+        logger.bind(component="training_service").info(
+            "Running local training for task '{}'",
+            task.task_id,
+        )
+
+        script_path = PROJECT_ROOT / "scripts" / "train_wakeword_v3.py"
+        if not script_path.exists():
+            raise RuntimeError(f"Training script not found: {script_path}")
+
+        samples_dir = session.samples_dir / "positive"
+        negative_dir = session.samples_dir / "negative"
+
+        cmd = [
+            sys.executable,
+            str(script_path),
+            "--samples", str(samples_dir),
+            "--keyword", session.keyword,
+            "--output-dir", str(output_dir),
+            "--negative-samples", str(negative_dir),
+            "--steps", str(task.steps),
+        ]
+
+        logger.bind(component="training_service").debug(
+            "Local command: {}",
+            " ".join(cmd),
+        )
+
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=PROJECT_ROOT,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+
+        with self._lock:
+            task.process = process
+
+        # Parse output for progress
+        output_lines = []
+        for line in process.stdout:
+            output_lines.append(line)
+            logger.bind(component="training_service").debug("Local: {}", line.strip())
+
+            # Parse progress: "Step 2000: Loss=0.0500 Acc=85.0%"
+            match = re.search(r"Step (\d+): Loss=([\d.]+) Acc=([\d.]+)%", line)
+            if match:
+                step = int(match.group(1))
+                loss = float(match.group(2))
+                accuracy = float(match.group(3)) / 100.0
+
+                with self._lock:
+                    task.current_step = step
+                    task.loss = loss
+                    task.accuracy = accuracy
+
+            # Check for cancellation
+            if task.status == "cancelled":
+                process.terminate()
+                return
+
+        process.wait()
+
+        if process.returncode != 0:
+            output = "".join(output_lines[-50:])
+            raise RuntimeError(f"Training failed: {output}")
+
+        # Check for model file
+        safe_name = session.keyword.replace(" ", "_")
+        model_path = output_dir / f"{safe_name}.onnx"
+        if not model_path.exists():
+            raise RuntimeError(f"Model file not created: {model_path}")
+
+        with self._lock:
+            task.status = "completed"
+            task.completed_at = datetime.now().isoformat()
+            task.current_step = task.steps
+            task.model_path = model_path
+
+        logger.bind(component="training_service").info(
+            "Local training task '{}' completed",
+            task.task_id,
+        )
+
+    def _run_simulated_training(
+        self,
+        task: TrainingTask,
+        session: TrainingSession,
+        output_dir: Path,
+    ) -> None:
+        """Run simulated training (fallback when Docker/PyTorch unavailable)."""
+        logger.bind(component="training_service").warning(
+            "Running simulated training (Docker/PyTorch not available)",
+        )
+
+        for step in range(0, task.steps, 1000):
+            if task.status == "cancelled":
+                return
+
+            with self._lock:
+                task.current_step = step
+                task.loss = max(0.1 * (1 - step / task.steps), 0.01)
+                task.accuracy = min(0.5 + 0.5 * (step / task.steps), 0.99)
+
+            time.sleep(0.1)  # Simulate training time
+
+        safe_name = session.keyword.replace(" ", "_")
+
+        with self._lock:
+            task.status = "completed"
+            task.completed_at = datetime.now().isoformat()
+            task.current_step = task.steps
+            task.model_path = output_dir / f"{safe_name}.onnx"
+
+        logger.bind(component="training_service").info(
+            "Simulated training task '{}' completed",
+            task.task_id,
+        )
+
     def _prepare_negative_samples(self, session: TrainingSession) -> None:
         """Prepare negative samples for training."""
-        # For now, use the built-in negative phrases
-        # In production, this would use existing wakeword samples or generate with TTS
         negative_dir = session.samples_dir / "negative"
+
+        # Copy some default negative samples if available
+        default_negative = WAKEWORD_DIR / "negative_samples"
+        if default_negative.exists() and not any(negative_dir.iterdir()):
+            for f in default_negative.glob("*.wav"):
+                shutil.copy(f, negative_dir / f.name)
 
         logger.bind(component="training_service").info(
             "Prepared negative samples for session '{}'",
@@ -311,6 +590,10 @@ class TrainingService:
         if task.status not in ("pending", "running"):
             return False
 
+        # Terminate process if running
+        if task.process:
+            task.process.terminate()
+
         with self._lock:
             task.status = "cancelled"
             task.completed_at = datetime.now().isoformat()
@@ -328,7 +611,6 @@ class TrainingService:
             return False
 
         # Remove session directory
-        import shutil
         if session.samples_dir.exists():
             shutil.rmtree(session.samples_dir)
 

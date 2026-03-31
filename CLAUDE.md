@@ -41,10 +41,27 @@ npm run build
 npm run test          # vitest run
 ```
 
+### 开发环境启停
+
+前后端联合开发推荐使用启停脚本：
+
+```bash
+bash scripts/dev.sh start    # 启动前后端开发环境
+bash scripts/dev.sh stop     # 停止前后端
+bash scripts/dev.sh status   # 查看运行状态
+bash scripts/dev.sh restart  # 重启前后端
+bash scripts/dev.sh logs     # 查看日志
+```
+
+启动后：
+- **前端**: https://localhost:5173 (Vite dev server，带热更新)
+- **后端**: http://localhost:7860 (FastAPI)
+- 前端 Vite 代理自动将 API 请求转发到后端
+
 ### 一键设置
 
 ```bash
-bash scripts/setup.sh            # 完整设置（venv + backend + frontend）
+bash scripts/setup.sh            # 宯整设置（venv + backend + frontend）
 bash scripts/setup.sh --skip-frontend  # 仅后端
 ```
 

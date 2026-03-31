@@ -62,7 +62,7 @@ describe('training-tool', () => {
   });
 
   describe('canProceedToTraining', () => {
-    it('should allow proceeding with enough samples', () => {
+    it('should allow proceeding with samples', () => {
       const state = createInitialState();
       state.micSamples = Array(10).fill(null).map((_, i) => ({
         id: `sample_${i}`,
@@ -75,7 +75,13 @@ describe('training-tool', () => {
       expect(canProceedToTraining(state)).toBe(true);
     });
 
-    it('should block proceeding with too few samples', () => {
+    it('should allow proceeding with zero samples (TTS will generate)', () => {
+      const state = createInitialState();
+      // 用户可以不录制任何样本，训练时会自动使用 TTS 生成
+      expect(canProceedToTraining(state)).toBe(true);
+    });
+
+    it('should allow proceeding with any sample count', () => {
       const state = createInitialState();
       state.micSamples = Array(3).fill(null).map((_, i) => ({
         id: `sample_${i}`,
@@ -85,7 +91,8 @@ describe('training-tool', () => {
         rms: 0.02,
         valid: true,
       }));
-      expect(canProceedToTraining(state)).toBe(false);
+      // 不再强制要求最小样本数
+      expect(canProceedToTraining(state)).toBe(true);
     });
   });
 });

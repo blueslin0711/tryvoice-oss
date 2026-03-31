@@ -107,6 +107,23 @@ export function renderKeywordInput(
   input?.focus();
 }
 
+/**
+ * Update button state without rebuilding the input field.
+ * Call this when keyword changes to preserve cursor position and focus.
+ */
+export function updateKeywordInputButtonState(state: TrainingToolState): void {
+  const nextBtn = document.getElementById('tt-next-btn') as HTMLButtonElement;
+  if (!nextBtn) return;
+
+  const isValid = state.keywordValid;
+  const btnColor = isValid ? '#667eea' : '#333';
+
+  nextBtn.disabled = !isValid;
+  nextBtn.style.background = btnColor;
+  nextBtn.style.cursor = isValid ? 'pointer' : 'not-allowed';
+  nextBtn.style.opacity = isValid ? '1' : '0.5';
+}
+
 // ──────────────────────────────────────────────
 // Stage 2: Sample Collection
 // ──────────────────────────────────────────────
@@ -130,7 +147,8 @@ export function renderSampleCollection(
                      state.ttsSamples.filter(s => s.valid).length;
   const totalCount = state.targetSampleCount;
   const progress = Math.min(validCount / totalCount, 1);
-  const canProceed = validCount >= 5;
+  // 不再强制要求样本数量，始终允许继续
+  const canProceed = true;
 
   const recordBtnColor = state.recordingInProgress ? '#f44336' : '#667eea';
   const recordBtnText = state.recordingInProgress ? '停止录音' : '开始录音';
@@ -148,16 +166,20 @@ export function renderSampleCollection(
       <div style="background:#111122;border-radius:12px;padding:16px;margin-bottom:20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <span style="font-size:13px;color:#888;">样本进度</span>
-          <span style="font-size:13px;color:#667eea;">${validCount} / ${totalCount}</span>
+          <span style="font-size:13px;color:#667eea;">${validCount} 个（可选）</span>
         </div>
         <div style="background:#0a0a18;border-radius:4px;height:8px;overflow:hidden;">
           <div style="background:linear-gradient(90deg,#667eea,#764ba2);height:100%;width:${progress * 100}%;"></div>
+        </div>
+        <div style="font-size:12px;color:#666;margin-top:8px;">
+          ${validCount > 0 ? `已录制 ${validCount} 个样本` : '可跳过录制，训练时自动生成 TTS 样本'}
         </div>
       </div>
 
       <!-- Recording Section -->
       <div style="background:#111122;border-radius:12px;padding:20px;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:16px;">麦克风录制</div>
+        <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:8px;">麦克风录制（可选）</div>
+        <div style="font-size:12px;color:#666;margin-bottom:16px;">录制真实语音样本可提高识别准确率</div>
 
         <div style="text-align:center;margin-bottom:16px;">
           <button
@@ -172,10 +194,9 @@ export function renderSampleCollection(
 
       <button
         id="tt-next-btn"
-        ${canProceed ? '' : 'disabled'}
-        style="width:100%;padding:14px;font-size:15px;font-weight:600;background:${canProceed ? '#667eea' : '#333'};border:none;border-radius:8px;color:#fff;cursor:${canProceed ? 'pointer' : 'not-allowed'};opacity:${canProceed ? 1 : 0.5};"
+        style="width:100%;padding:14px;font-size:15px;font-weight:600;background:#667eea;border:none;border-radius:8px;color:#fff;cursor:pointer;"
       >
-        ${canProceed ? '下一步：开始训练' : `至少需要 5 个样本（当前 ${validCount} 个）`}
+        下一步：开始训练
       </button>
     </div>
   `;

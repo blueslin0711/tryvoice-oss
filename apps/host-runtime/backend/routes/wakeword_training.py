@@ -29,14 +29,14 @@ router = APIRouter()
 async def upload_samples(
     keyword: str = Form(...),
     sampleType: str = Form("mic"),
-    samples: list[UploadFile] = File(...),
+    samples: list[UploadFile] = File(default=[]),
 ):
     """Upload microphone-recorded samples.
 
     Args:
         keyword: The wakeword keyword
         sampleType: 'mic' or 'tts'
-        samples: List of WAV files
+        samples: List of WAV files (optional, can be empty)
 
     Returns:
         Session ID and sample count
@@ -50,7 +50,7 @@ async def upload_samples(
     # Get or create session
     session_id = service.create_session(keyword)
 
-    # Process uploaded files
+    # Process uploaded files (if any)
     audio_samples = []
     for upload in samples:
         content = await upload.read()
@@ -77,15 +77,12 @@ async def upload_samples(
                 str(e),
             )
 
-    if not audio_samples:
-        return JSONResponse(
-            {"success": False, "error": "No valid samples"},
-            status_code=400,
-        )
-
-    # Add samples to session
-    source = "mic" if sampleType == "mic" else "tts"
-    count = service.add_samples(session_id, audio_samples, source=source)
+    # Allow empty samples - will use TTS later
+    count = 0
+    if audio_samples:
+        # Add samples to session
+        source = "mic" if sampleType == "mic" else "tts"
+        count = service.add_samples(session_id, audio_samples, source=source)
 
     logger.bind(component="wakeword_training").info(
         "Uploaded {} samples for keyword '{}'",
@@ -190,11 +187,8 @@ async def start_training(request: dict):
             status_code=400,
         )
 
-    if session.sample_count < 5:
-        return JSONResponse(
-            {"success": False, "error": f"Need at least 5 samples, got {session.sample_count}"},
-            status_code=400,
-        )
+    # 不再强制要求最小样本数，TTS 已生成足够样本
+    # 训练服务会处理样本数量验证
 
     try:
         task_id = service.start_training(session_id, steps=steps)

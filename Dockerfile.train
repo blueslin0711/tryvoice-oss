@@ -12,12 +12,12 @@ RUN pip install --no-cache-dir \
     torch==2.0.1 \
     torchaudio==2.0.2
 
-# 安装其他依赖
+# 安装其他依赖 - 使用 NumPy 1.x 兼容版本
 RUN pip install --no-cache-dir \
+    "numpy<2" \
     onnxruntime \
     onnx \
-    scipy \
-    numpy
+    scipy
 
 # 复制脚本
 COPY scripts/train_wakeword_v3.py /app/
