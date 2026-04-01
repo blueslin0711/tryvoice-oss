@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 local-stt = ["faster-whisper>=1.0"]
 vad = ["onnxruntime>=1.16", "numpy", "pydub"]
+tts-fallback = ["pyttsx3"]  # 本地 TTS 备选，当 edge-tts 网络失败时使用
 dev = ["pytest", "pytest-asyncio", "pytest-cov", "httpx", "ruff"]
 
 [project.scripts]
