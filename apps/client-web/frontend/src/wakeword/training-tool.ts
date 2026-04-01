@@ -69,6 +69,8 @@ export interface TrainingToolState {
   validationResults: ValidationResult[];
   realtimeTestingActive: boolean;
   realtimeDetectionCount: number;
+  batchTestingInProgress: boolean;
+  batchTestingProgress: { current: number; total: number } | null;
 
   // Stage 5: Install
   modelFile: string | null;
@@ -97,6 +99,8 @@ export function createInitialState(): TrainingToolState {
     validationResults: [],
     realtimeTestingActive: false,
     realtimeDetectionCount: 0,
+    batchTestingInProgress: false,
+    batchTestingProgress: null,
     modelFile: null,
     modelData: null,
   };
@@ -405,13 +409,42 @@ function renderValidationStage(): void {
       renderCurrentStage();
     },
     onRunBatchTest: async () => {
-      if (state && collector) {
-        const samples = collector.getValidSamples().map(s => ({
+      if (!state || !collector) return;
+
+      // 获取录制样本
+      const samples = collector.getValidSamples();
+
+      if (samples.length === 0) {
+        // 无录制样本，提示用户
+        log.warn('No recorded samples for batch testing');
+        return;
+      }
+
+      // 设置批量测试进度状态
+      state.batchTestingInProgress = true;
+      state.batchTestingProgress = { current: 0, total: samples.length };
+      renderCurrentStage();
+
+      // 运行批量测试，带进度回调
+      const results = await validateBatchSamples(
+        samples.map(s => ({
           id: s.id,
           audioData: s.audioData,
-        }));
-        const results = await validateBatchSamples(samples, state.keyword);
+        })),
+        state.keyword,
+        (current, total) => {
+          if (state) {
+            state.batchTestingProgress = { current, total };
+            renderCurrentStage();
+          }
+        },
+      );
+
+      // 更新结果和状态
+      if (state) {
         state.validationResults = results;
+        state.batchTestingInProgress = false;
+        state.batchTestingProgress = null;
         renderCurrentStage();
       }
     },

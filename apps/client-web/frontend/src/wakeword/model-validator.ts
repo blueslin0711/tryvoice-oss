@@ -98,58 +98,46 @@ export async function validateBatchSamples(
 ): Promise<ValidationResult[]> {
   const validator = new ModelValidator();
 
-  // Load the trained model for this keyword
-  const { getOwwSessions } = await import('./wakeword-manager');
-  const { melSession, embSession } = getOwwSessions();
-  const ort = (window as any).ort;
-
-  if (!melSession || !embSession) {
-    throw new Error('OWW sessions not initialized');
-  }
-
-  // Process each sample
+  // Process each sample by calling backend API
   for (let i = 0; i < samples.length; i++) {
     const sample = samples[i];
     const startTime = performance.now();
 
     try {
-      // Extract features from the sample
-      const { extractBatchFeatures } = await import('./personalization-features');
-      const features = await extractBatchFeatures([sample.audioData], melSession, embSession, ort);
+      // Send audio to backend for detection using trained model
+      const response = await fetch('/wakeword/detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyword: keyword,
+          audio: Array.from(sample.audioData),
+        }),
+      });
 
-      // Run the classifier on the features
-      // The classifier expects 16-frame sequences
-      const sequences: Float32Array[] = [];
-      for (let j = 0; j < features[0].length - 15; j++) {
-        const seq = new Float32Array(16 * 96);
-        for (let k = 0; k < 16; k++) {
-          const frame = features[0][j + k];
-          if (frame && typeof frame === 'object' && 'length' in frame) {
-            seq.set(frame as ArrayLike<number>, k * 96);
-          }
-        }
-        sequences.push(seq);
-      }
-
-      // For now, use a simple threshold-based detection
-      // In production, this would load and run the trained classifier
-      const avgEnergy = sequences.reduce((sum, seq) => {
-        let energy = 0;
-        for (let j = 0; j < seq.length; j++) energy += seq[j] * seq[j];
-        return sum + energy / seq.length;
-      }, 0) / sequences.length;
-
-      const detected = avgEnergy > 0.1; // Simplified detection
       const latencyMs = performance.now() - startTime;
 
-      validator.addResult({
-        sampleId: sample.id,
-        detected,
-        confidence: Math.min(avgEnergy * 2, 1.0),
-        latencyMs,
-      });
+      if (response.ok) {
+        const result = await response.json();
+        validator.addResult({
+          sampleId: sample.id,
+          detected: result.detected || false,
+          confidence: result.confidence || 0,
+          latencyMs,
+        });
+      } else {
+        // API error, record as not detected
+        validator.addResult({
+          sampleId: sample.id,
+          detected: false,
+          confidence: 0,
+          latencyMs,
+        });
+      }
     } catch (e) {
-      // If detection fails, record as not detected
+      log.warn('Batch validation failed for sample', {
+        sampleId: sample.id,
+        error: String(e),
+      });
       validator.addResult({
         sampleId: sample.id,
         detected: false,

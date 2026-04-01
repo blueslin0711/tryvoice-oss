@@ -306,6 +306,11 @@ export function renderValidation(
   const testBtnColor = isTesting ? '#f44336' : '#667eea';
   const testBtnText = isTesting ? '停止测试' : '开始实时测试';
 
+  // 批量测试状态
+  const batchTesting = state.batchTestingInProgress;
+  const batchProgress = state.batchTestingProgress;
+  const hasSamples = state.micSamples.length > 0;
+
   overlay.innerHTML = `
     <div style="width:100%;max-width:450px;padding:24px;">
       <button id="tt-back-btn" style="float:left;background:transparent;border:none;color:#666;cursor:pointer;font-size:22px;padding:0;margin-bottom:8px;">←</button>
@@ -349,12 +354,31 @@ export function renderValidation(
         ` : ''}
       </div>
 
-      <button
-        id="tt-batch-btn"
-        style="width:100%;padding:12px;font-size:14px;background:transparent;border:1px solid #2a2a3a;border-radius:8px;color:#888;cursor:pointer;margin-bottom:12px;"
-      >
-        运行批量回测
-      </button>
+      <!-- 批量回测 -->
+      <div style="background:#111122;border-radius:12px;padding:16px;margin-bottom:12px;">
+        <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:8px;">批量回测</div>
+        <div style="font-size:12px;color:#666;margin-bottom:12px;">
+          ${hasSamples ? `使用 ${state.micSamples.length} 个录制样本测试识别准确率` : '无录制样本，请先录制样本或使用实时测试'}
+        </div>
+        ${batchTesting && batchProgress ? `
+          <div style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+              <span style="font-size:12px;color:#888;">测试进度</span>
+              <span style="font-size:12px;color:#667eea;">${batchProgress.current} / ${batchProgress.total}</span>
+            </div>
+            <div style="background:#0a0a18;border-radius:4px;height:6px;overflow:hidden;">
+              <div style="background:linear-gradient(90deg,#667eea,#764ba2);height:100%;width:${(batchProgress.current / batchProgress.total) * 100}%;"></div>
+            </div>
+          </div>
+        ` : ''}
+        <button
+          id="tt-batch-btn"
+          style="width:100%;padding:12px;font-size:14px;background:${hasSamples ? 'transparent' : '#1a1a2a'};border:1px solid #2a2a3a;border-radius:8px;color:${hasSamples ? '#888' : '#555'};cursor:${hasSamples ? 'pointer' : 'not-allowed'};"
+          ${hasSamples ? '' : 'disabled'}
+        >
+          ${batchTesting ? '测试中...' : '运行批量回测'}
+        </button>
+      </div>
 
       <button
         id="tt-next-btn"
@@ -367,7 +391,9 @@ export function renderValidation(
 
   document.getElementById('tt-back-btn')?.addEventListener('click', handlers.onBack);
   document.getElementById('tt-next-btn')?.addEventListener('click', handlers.onNext);
-  document.getElementById('tt-batch-btn')?.addEventListener('click', handlers.onRunBatchTest);
+  if (hasSamples && !batchTesting) {
+    document.getElementById('tt-batch-btn')?.addEventListener('click', handlers.onRunBatchTest);
+  }
   document.getElementById('tt-realtime-btn')?.addEventListener('click', () => {
     if (state.realtimeTestingActive) {
       handlers.onStopRealtimeTest();
