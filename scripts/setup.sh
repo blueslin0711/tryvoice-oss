@@ -73,26 +73,30 @@ if [ "$SKIP_FRONTEND" -eq 0 ]; then
         # Download third-party assets to serve locally (avoid CDN failures on mobile / China networks).
         # These files are fetched from CDN at build time only; at runtime they are served from /static/.
         ORT_VERSION="1.14.0"
-        ORT_CDN="https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist"
+        # Try unpkg first (more reliable in China), fallback to jsdelivr
+        ORT_CDN="https://unpkg.com/onnxruntime-web@${ORT_VERSION}/dist"
+        ORT_CDN_ALT="https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist"
         for f in ort.js ort-wasm.wasm ort-wasm-simd.wasm; do
             if [ ! -f "$BACKEND_STATIC/static/$f" ]; then
                 echo "  Downloading $f ..."
-                curl -sL "$ORT_CDN/$f" -o "$BACKEND_STATIC/static/$f"
+                curl -sL "$ORT_CDN/$f" -o "$BACKEND_STATIC/static/$f" || curl -sL "$ORT_CDN_ALT/$f" -o "$BACKEND_STATIC/static/$f"
             fi
         done
 
         KATEX_VERSION="0.16.9"
-        KATEX_CSS="https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css"
+        KATEX_CSS="https://unpkg.com/katex@${KATEX_VERSION}/dist/katex.min.css"
+        KATEX_CSS_ALT="https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css"
         if [ ! -f "$BACKEND_STATIC/static/katex.min.css" ]; then
             echo "  Downloading katex.min.css ..."
-            curl -sL "$KATEX_CSS" -o "$BACKEND_STATIC/static/katex.min.css"
+            curl -sL "$KATEX_CSS" -o "$BACKEND_STATIC/static/katex.min.css" || curl -sL "$KATEX_CSS_ALT" -o "$BACKEND_STATIC/static/katex.min.css"
         fi
 
         SPEECH_SDK_VERSION="1.48.0"
-        SPEECH_SDK_JS="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@${SPEECH_SDK_VERSION}/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js"
+        SPEECH_SDK_JS="https://unpkg.com/microsoft-cognitiveservices-speech-sdk@${SPEECH_SDK_VERSION}/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js"
+        SPEECH_SDK_JS_ALT="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@${SPEECH_SDK_VERSION}/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js"
         if [ ! -f "$BACKEND_STATIC/static/microsoft.cognitiveservices.speech.sdk.bundle-min.js" ]; then
             echo "  Downloading microsoft.cognitiveservices.speech.sdk.bundle-min.js ..."
-            curl -sL "$SPEECH_SDK_JS" -o "$BACKEND_STATIC/static/microsoft.cognitiveservices.speech.sdk.bundle-min.js"
+            curl -sL "$SPEECH_SDK_JS" -o "$BACKEND_STATIC/static/microsoft.cognitiveservices.speech.sdk.bundle-min.js" || curl -sL "$SPEECH_SDK_JS_ALT" -o "$BACKEND_STATIC/static/microsoft.cognitiveservices.speech.sdk.bundle-min.js"
         fi
 
         echo "Frontend built and local assets bundled."
