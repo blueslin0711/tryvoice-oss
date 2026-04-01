@@ -1426,6 +1426,10 @@ async function startOpenWakeWord(earlyMicP?: Promise<MediaStream | null> | null)
     owwEmaScores = {};
     owwLastDetection = {};
     wakeWordActive = true;
+    // Debug: expose state to window for troubleshooting
+    (window as any).__owwActive = true;
+    (window as any).__owwStream = owwStream;
+    (window as any).__owwAudioCtx = owwAudioCtx;
     const loadedSessions = Object.keys(owwKeywordSessions);
     const modelFiles = loadedSessions.map(kw => OWW_KEYWORD_TO_MODEL[kw] || '?');
     log.info(`OWW started successfully — ${loadedSessions.length} model(s) loaded`, {
@@ -1770,6 +1774,7 @@ function stopSherpaKwsWakeWord(releaseModels = false): void {
 
 function stopOpenWakeWord(releaseSessions = false): void {
   owwActive = false;
+  (window as any).__owwActive = false;
   _owwPushChunk = null;
   _stopRecordingFeed();
   _clearSpeechGate();
