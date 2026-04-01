@@ -69,6 +69,7 @@ export interface TrainingToolState {
   validationResults: ValidationResult[];
   realtimeTestingActive: boolean;
   realtimeDetectionCount: number;
+  realtimeAudioLevel: number;
   batchTestingInProgress: boolean;
   batchTestingProgress: { current: number; total: number } | null;
 
@@ -99,6 +100,7 @@ export function createInitialState(): TrainingToolState {
     validationResults: [],
     realtimeTestingActive: false,
     realtimeDetectionCount: 0,
+    realtimeAudioLevel: 0,
     batchTestingInProgress: false,
     batchTestingProgress: null,
     modelFile: null,
@@ -468,12 +470,15 @@ function renderValidationStage(): void {
 // 实时检测状态
 let realtimeMediaStream: MediaStream | null = null;
 let realtimeAudioContext: AudioContext | null = null;
+let realtimeRms: number = 0;
 
 async function startRealtimeDetection(): Promise<void> {
   if (!state?.modelFile) {
     log.warn('No model file available for realtime detection');
     return;
   }
+
+  log.info('Starting realtime detection', { keyword: state.keyword, modelFile: state.modelFile });
 
   try {
     // 获取麦克风流
@@ -485,15 +490,29 @@ async function startRealtimeDetection(): Promise<void> {
     const processor = realtimeAudioContext.createScriptProcessor(4096, 1, 1);
     let audioBuffer: Float32Array[] = [];
     const chunkSize = 1280; // 80ms at 16kHz
+    let detectCount = 0;
 
     processor.onaudioprocess = async (e) => {
       if (!state?.realtimeTestingActive) return;
 
       const inputData = e.inputBuffer.getChannelData(0);
+
+      // 计算 RMS 并更新状态
+      let sumSq = 0;
+      for (let i = 0; i < inputData.length; i++) sumSq += inputData[i] * inputData[i];
+      realtimeRms = Math.sqrt(sumSq / inputData.length);
+
+      // 每隔一段时间更新 UI 显示音频级别
+      if (state && detectCount % 5 === 0) {
+        state.realtimeAudioLevel = realtimeRms;
+        renderCurrentStage();
+      }
+      detectCount++;
+
       audioBuffer.push(new Float32Array(inputData));
 
-      // 合并缓冲区
-      if (audioBuffer.length >= 10) { // 约 400ms
+      // 合并缓冲区 - 约 400ms
+      if (audioBuffer.length >= 10) {
         const totalLength = audioBuffer.reduce((sum, chunk) => sum + chunk.length, 0);
         const audio = new Float32Array(totalLength);
         let offset = 0;
@@ -516,13 +535,19 @@ async function startRealtimeDetection(): Promise<void> {
 
           if (response.ok) {
             const result = await response.json();
+            log.info('Detection result', {
+              detected: result.detected,
+              confidence: result.confidence?.toFixed(4),
+              method: result.method,
+              sequences: result.sequences,
+            });
             if (result.detected && state) {
               state.realtimeDetectionCount = (state.realtimeDetectionCount || 0) + 1;
               renderCurrentStage();
             }
           }
         } catch (e) {
-          // 忽略检测错误
+          log.warn('Detection request failed', { error: String(e) });
         }
       }
     };
@@ -548,6 +573,10 @@ function stopRealtimeDetection(): void {
   if (realtimeAudioContext) {
     realtimeAudioContext.close();
     realtimeAudioContext = null;
+  }
+  realtimeRms = 0;
+  if (state) {
+    state.realtimeAudioLevel = 0;
   }
   log.info('Stopped realtime detection');
 }

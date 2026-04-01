@@ -421,42 +421,106 @@ async def detect_wakeword(request: dict):
             detected = energy > 0.02
             confidence = min(energy * 5, 1.0)
 
+            logger.bind(component="wakeword_training").debug(
+                "Model not found, using energy fallback: energy={:.4f}, detected={}",
+                energy,
+                detected,
+            )
+
             return JSONResponse({
                 "detected": detected,
                 "confidence": float(confidence),
                 "method": "energy_fallback",
+                "modelPath": str(model_path),
             })
 
         # 使用 ONNX Runtime 运行模型
         import onnxruntime as ort
 
-        # 加载模型
-        session = ort.InferenceSession(str(model_path))
+        # 加载 OWW 基础模型和关键词模型
+        mel_path = WAKEWORD_DIR / "oww" / "melspectrogram.onnx"
+        emb_path = WAKEWORD_DIR / "oww" / "embedding_model.onnx"
 
-        # 准备输入
-        # 模型期望 (batch, 16, 96) 形状
-        # 从音频中提取特征序列
+        if not mel_path.exists() or not emb_path.exists():
+            logger.bind(component="wakeword_training").warning(
+                "OWW base models not found, using energy fallback"
+            )
+            energy = np.sqrt(np.mean(audio ** 2))
+            return JSONResponse({
+                "detected": energy > 0.02,
+                "confidence": min(energy * 5, 1.0),
+                "method": "energy_fallback_no_base",
+            })
+
+        mel_session = ort.InferenceSession(str(mel_path))
+        emb_session = ort.InferenceSession(str(emb_path))
+        kw_session = ort.InferenceSession(str(model_path))
+
+        # 获取输入名称
+        mel_input_name = mel_session.get_inputs()[0].name
+        emb_input_name = emb_session.get_inputs()[0].name
+
+        # 提取 embedding 序列（与训练时相同的方式）
         chunk_size = 1280  # 80ms
-        feature_dim = 96
-        sequence_length = 16
+        mel_buffer = []
+        embeddings = []
 
-        # 简化特征提取：使用音频能量作为特征
-        features = []
-        for i in range(0, len(audio) - chunk_size, chunk_size // 2):
-            chunk = audio[i : i + chunk_size]
-            # 计算简单的频谱特征
-            fft = np.abs(np.fft.rfft(chunk))[:feature_dim]
-            if len(fft) < feature_dim:
-                fft = np.pad(fft, (0, feature_dim - len(fft)))
-            features.append(fft / (np.max(fft) + 1e-8))
+        # 填充音频到足够长度
+        min_len = chunk_size * 20
+        if len(audio) < min_len:
+            audio = np.pad(audio, (0, min_len - len(audio)))
 
-        # 构建序列
-        if len(features) < sequence_length:
-            features = features + [features[-1]] * (sequence_length - len(features))
+        for i in range(0, len(audio) - chunk_size + 1, chunk_size):
+            chunk = audio[i : i + chunk_size].astype(np.float32)
 
+            try:
+                # Mel spectrogram
+                mel_out = mel_session.run(None, {mel_input_name: chunk.reshape(1, -1)})
+                mel_frames = mel_out[0]
+
+                # 处理 mel 输出
+                if mel_frames is not None and len(mel_frames) > 0:
+                    if len(mel_frames.shape) == 4:
+                        n_frames = mel_frames.shape[2]
+                        for f in range(n_frames):
+                            frame = mel_frames[0, 0, f, :]
+                            frame = (frame / 10.0) + 2.0
+                            mel_buffer.append(frame)
+                    elif len(mel_frames.shape) == 3:
+                        n_frames = mel_frames.shape[1]
+                        for f in range(n_frames):
+                            frame = mel_frames[0, f, :]
+                            frame = (frame / 10.0) + 2.0
+                            mel_buffer.append(frame)
+
+                # 当 mel buffer 足够时，生成 embedding
+                while len(mel_buffer) >= 76:
+                    mel_for_emb = np.array(mel_buffer[:76])
+                    emb_input = mel_for_emb.reshape(1, 76, 32, 1).astype(np.float32)
+                    emb_out = emb_session.run(None, {emb_input_name: emb_input})
+                    emb = emb_out[0].flatten()[:96]
+                    embeddings.append(emb)
+                    mel_buffer = mel_buffer[8:]
+
+            except Exception as e:
+                continue
+
+        if len(embeddings) < 16:
+            logger.bind(component="wakeword_training").debug(
+                "Not enough embeddings: {}",
+                len(embeddings),
+            )
+            return JSONResponse({
+                "detected": False,
+                "confidence": 0,
+                "method": "onnx_model",
+                "embeddings": len(embeddings),
+            })
+
+        # 构建序列 (16, 96)
         sequences = []
-        for i in range(len(features) - sequence_length + 1):
-            seq = np.array(features[i : i + sequence_length], dtype=np.float32)
+        for i in range(len(embeddings) - 16 + 1):
+            seq = np.array(embeddings[i : i + 16], dtype=np.float32)
             sequences.append(seq)
 
         if not sequences:
@@ -465,19 +529,31 @@ async def detect_wakeword(request: dict):
                 "confidence": 0,
             })
 
-        # 运行推理
+        # 运行关键词模型推理
         input_array = np.array(sequences, dtype=np.float32)
-        outputs = session.run(None, {"input": input_array})
+        outputs = kw_session.run(None, {"input": input_array})
 
         # 获取最大置信度
         predictions = outputs[0].flatten()
         max_confidence = float(np.max(predictions))
+        mean_confidence = float(np.mean(predictions))
         detected = max_confidence > 0.5
+
+        logger.bind(component="wakeword_training").info(
+            "Detection: keyword='{}', sequences={}, max_conf={:.4f}, mean_conf={:.4f}, detected={}",
+            keyword,
+            len(sequences),
+            max_confidence,
+            mean_confidence,
+            detected,
+        )
 
         return JSONResponse({
             "detected": detected,
             "confidence": max_confidence,
+            "meanConfidence": mean_confidence,
             "method": "onnx_model",
+            "sequences": len(sequences),
         })
 
     except Exception as e:

@@ -347,6 +347,16 @@ export function renderValidation(
           <div style="margin-top:12px;text-align:center;">
             <div style="font-size:13px;color:#667eea;">正在监听...</div>
             <div style="font-size:24px;margin-top:8px;">🎤</div>
+            <!-- 音频级别指示器 -->
+            <div style="margin-top:12px;padding:8px;background:#0a0a18;border-radius:8px;">
+              <div style="font-size:11px;color:#666;margin-bottom:4px;">音频输入</div>
+              <div style="background:#1a1a2a;border-radius:4px;height:8px;overflow:hidden;">
+                <div style="background:linear-gradient(90deg,#4CAF50,#8BC34A);height:100%;width:${Math.min((state.realtimeAudioLevel || 0) * 500, 100)}%;transition:width 0.1s ease;"></div>
+              </div>
+              <div style="font-size:10px;color:#555;margin-top:4px;">
+                ${state.realtimeAudioLevel ? `RMS: ${(state.realtimeAudioLevel * 1000).toFixed(1)}m` : '等待输入...'}
+              </div>
+            </div>
             ${state.realtimeDetectionCount !== undefined ? `
               <div style="font-size:13px;color:#4CAF50;margin-top:8px;">已检测到 ${state.realtimeDetectionCount} 次</div>
             ` : ''}
