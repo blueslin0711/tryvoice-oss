@@ -234,6 +234,7 @@ def main():
 
     # 训练
     print(f"\n训练 {args.steps} 步...")
+    sys.stdout.flush()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.BCELoss()
 
@@ -252,11 +253,13 @@ def main():
         loss.backward()
         optimizer.step()
 
-        if step % 2000 == 0:
+        # 输出进度每 1000 步
+        if step % 1000 == 0:
             with torch.no_grad():
                 pred = (model(X_t) > 0.5).float()
                 acc = (pred == y_t).float().mean()
             print(f"Step {step}: Loss={loss.item():.4f} Acc={acc.item():.1%}")
+            sys.stdout.flush()  # 确保输出被刷新
 
     # 保存权重
     safe_name = args.keyword.replace(" ", "_")

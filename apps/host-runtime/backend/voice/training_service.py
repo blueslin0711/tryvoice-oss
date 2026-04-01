@@ -357,10 +357,11 @@ class TrainingService:
         output_lines = []
         for line in process.stdout:
             output_lines.append(line)
-            logger.bind(component="training_service").debug("Docker: {}", line.strip())
+            line_stripped = line.strip()
+            logger.bind(component="training_service").debug("Docker: {}", line_stripped)
 
             # Parse progress: "Step 2000: Loss=0.0500 Acc=85.0%"
-            match = re.search(r"Step (\d+): Loss=([\d.]+) Acc=([\d.]+)%", line)
+            match = re.search(r"Step (\d+): Loss=([\d.]+) Acc=([\d.]+)%", line_stripped)
             if match:
                 step = int(match.group(1))
                 loss = float(match.group(2))
@@ -370,6 +371,11 @@ class TrainingService:
                     task.current_step = step
                     task.loss = loss
                     task.accuracy = accuracy
+
+                logger.bind(component="training_service").info(
+                    "Training progress: step {}/{}, loss={:.4f}, acc={:.2%}",
+                    step, task.steps, loss, accuracy
+                )
 
             # Check for cancellation
             if task.status == "cancelled":
@@ -448,10 +454,11 @@ class TrainingService:
         output_lines = []
         for line in process.stdout:
             output_lines.append(line)
-            logger.bind(component="training_service").debug("Local: {}", line.strip())
+            line_stripped = line.strip()
+            logger.bind(component="training_service").debug("Local: {}", line_stripped)
 
             # Parse progress: "Step 2000: Loss=0.0500 Acc=85.0%"
-            match = re.search(r"Step (\d+): Loss=([\d.]+) Acc=([\d.]+)%", line)
+            match = re.search(r"Step (\d+): Loss=([\d.]+) Acc=([\d.]+)%", line_stripped)
             if match:
                 step = int(match.group(1))
                 loss = float(match.group(2))
@@ -461,6 +468,11 @@ class TrainingService:
                     task.current_step = step
                     task.loss = loss
                     task.accuracy = accuracy
+
+                logger.bind(component="training_service").info(
+                    "Training progress: step {}/{}, loss={:.4f}, acc={:.2%}",
+                    step, task.steps, loss, accuracy
+                )
 
             # Check for cancellation
             if task.status == "cancelled":
