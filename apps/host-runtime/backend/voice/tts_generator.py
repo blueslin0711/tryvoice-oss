@@ -18,8 +18,8 @@ except ImportError:
     edge_tts = None
 
 
-# Edge TTS 连接超时时间（秒）
-EDGE_TTS_TIMEOUT = 60
+# Edge TTS 连接超时时间（秒）- 5分钟
+EDGE_TTS_TIMEOUT = 300
 
 
 class TTSGenerator:
