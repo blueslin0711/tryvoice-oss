@@ -43,7 +43,7 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: 5170,
     hmr: false,
     proxy: {
       '/ws':            wsProxy(backendTarget),

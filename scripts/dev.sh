@@ -7,7 +7,7 @@
 #   bash scripts/dev.sh status   # 查看运行状态
 #   bash scripts/dev.sh restart  # 重启前后端
 #
-# 前端: https://localhost:5173 (Vite dev server)
+# 前端: https://localhost:5170 (Vite dev server)
 # 后端: http://localhost:7860  (FastAPI)
 
 set -e
@@ -15,7 +15,7 @@ set -e
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FRONTEND_DIR="$REPO_ROOT/apps/client-web/frontend"
 BACKEND_PORT=7860
-FRONTEND_PORT=5173
+FRONTEND_PORT=5170
 
 # ── 辅助函数 ──────────────────────────────────────────────────────────────
 
