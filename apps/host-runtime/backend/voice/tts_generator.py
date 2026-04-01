@@ -73,9 +73,13 @@ class TTSGenerator:
                 return await self._generate_edge_tts(text, voice)
             except Exception as e:
                 logger.warning(f"Edge TTS failed: {e}")
-                if self._enable_fallback and self._local_tts:
-                    logger.info("Falling back to local TTS")
-                    return self._generate_local(text)
+                if self._enable_fallback:
+                    # 尝试初始化本地 TTS 作为备选
+                    if not self._local_tts:
+                        self._init_local_tts()
+                    if self._local_tts:
+                        logger.info("Falling back to local TTS")
+                        return self._generate_local(text)
                 raise
 
         # 使用本地 TTS
