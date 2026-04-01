@@ -141,6 +141,12 @@ bus.on('wakeword:audio-level', (rms: number) => {
   const norm = Math.min(rms / 0.12, 1);
   if (wwToggle) wwToggle.style.setProperty('--ww-rms', String(norm));
   if (carModeBtn) carModeBtn.style.setProperty('--ww-rms', String(norm));
+  // Debug: log every 30 calls to avoid spam
+  if ((window as any).__wwAudioLevelCount === undefined) (window as any).__wwAudioLevelCount = 0;
+  (window as any).__wwAudioLevelCount++;
+  if ((window as any).__wwAudioLevelCount % 30 === 0) {
+    console.log('[wakeword] audio-level rms=', rms.toFixed(4), 'norm=', norm.toFixed(2));
+  }
 });
 
 export function updateAutoReadToggle(): void {
