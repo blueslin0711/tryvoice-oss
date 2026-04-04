@@ -15,6 +15,9 @@ from backend.paths import AVATARS_DIR, INDEX_PATH, STATIC_DIR, WAKEWORD_DIR
 
 router = APIRouter()
 
+# Static root files (manifest.json, favicon.ico, sw.js, etc.)
+STATIC_ROOT_FILES = {"manifest.json", "favicon.ico", "sw.js", "robots.txt"}
+
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-cache, no-store, must-revalidate",
     "Pragma": "no-cache",
@@ -98,4 +101,24 @@ async def avatar_file(filename: str):
     fp = AVATARS_DIR / filename
     if fp.exists() and fp.is_file():
         return FileResponse(fp)
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
+@router.get("/{filename}")
+async def static_root_file(filename: str):
+    """Serve static root files (manifest.json, favicon.ico, sw.js, etc.)."""
+    if filename not in STATIC_ROOT_FILES:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    # Check static-dist first (built frontend), then public
+    for base_dir in [STATIC_DIR.parent, STATIC_DIR]:
+        fp = base_dir / filename
+        if fp.exists() and fp.is_file():
+            mime_types = {
+                ".json": "application/json",
+                ".ico": "image/x-icon",
+                ".js": "application/javascript",
+                ".txt": "text/plain",
+            }
+            ct = mime_types.get(fp.suffix, "application/octet-stream")
+            return FileResponse(fp, media_type=ct, headers=NO_CACHE_HEADERS)
     return JSONResponse({"error": "not found"}, status_code=404)

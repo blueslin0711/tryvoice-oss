@@ -2051,7 +2051,17 @@ function onWakeWordDetected(): void {
   showToast(t('toast.wakeword_heard_start_recording'));
   audioPlayer.getAudioContext();
 
-  const END_SILENCE_MS = 30000;
+  const END_SILENCE_MS = (() => {
+    // Allow user to configure silence timeout (default 5 seconds)
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY + 'wwSilenceMs');
+      if (saved) {
+        const ms = parseInt(saved, 10);
+        if (ms > 0 && ms <= 30000) return ms;
+      }
+    } catch (_e) { /* ignore */ }
+    return 5000; // Default: 5 seconds
+  })();
   const MIN_RECORD_MS = 2000;
   const MAX_RECORD_MS = 300000;
   const LEVEL_TH = 0.03;
@@ -2091,7 +2101,9 @@ function onWakeWordDetected(): void {
     // Set up chunked STT if browser STT is available
     const browserSTT = (await import('../audio/browser-stt')).browserSTT;
     const useChunked = browserSTT.ready;
-    const sttLang = (document.getElementById('stt-language-select') as HTMLSelectElement | null)?.value || 'en';
+    // Priority: DOM select > localStorage > default 'zh'
+    const sttLang = (document.getElementById('stt-language-select') as HTMLSelectElement | null)?.value
+      || (() => { try { return localStorage.getItem(STORAGE_KEY + 'sttLang') || 'zh'; } catch (_e) { return 'zh'; } })();
     const chunkSilenceDetector = useChunked
       ? createSilenceDetector(getChunkMinDurationMs(), SILENCE_THRESHOLD, SILENCE_TRIGGER_MS)
       : null;
@@ -2366,6 +2378,15 @@ export function cancelWakeWordRecording(): void {
     }
   }
   showToast(t('toast.cancelled_recording'));
+}
+
+export function stopWakeWordRecording(): void {
+  // Stop recording and send for transcription (like endword behavior)
+  if (!micState.isActive) return;
+  _wwChunkRestart = false;
+  if (wakeWordRecorder?.state === 'recording') {
+    wakeWordRecorder.stop();
+  }
 }
 
 export function applyInputMode(mode: string): void {

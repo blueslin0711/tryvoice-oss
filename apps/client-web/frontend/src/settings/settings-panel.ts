@@ -2007,7 +2007,7 @@ function initGlobalSettings(): void {
   // STT language select
   const sttLangSelect = document.getElementById('stt-language-select') as HTMLSelectElement;
   if (sttLangSelect) {
-    const savedLang = (() => { try { return localStorage.getItem(STORAGE_KEY + 'sttLang') || 'en'; } catch (_e) { return 'en'; } })();
+    const savedLang = (() => { try { return localStorage.getItem(STORAGE_KEY + 'sttLang') || 'zh'; } catch (_e) { return 'zh'; } })();
     sttLangSelect.value = savedLang;
     sttLangSelect.addEventListener('change', () => {
       const lang = sttLangSelect.value;

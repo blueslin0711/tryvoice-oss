@@ -2,6 +2,7 @@
 
 import { bus } from '../core/event-bus';
 import { createLogger } from '../logging/logger';
+import { STORAGE_KEY } from '../core/types';
 import {
   getCurrentBotId,
   getInputMode, interruptBot,
@@ -20,6 +21,7 @@ import { audioPlayer } from '../audio/audio-player';
 import * as ws from '../network/ws-client';
 import { outbox } from '../network/outbox';
 import { voiceHistoryStore } from '../store/voice-history-store';
+import { stopWakeWordRecording } from '../wakeword/wakeword-manager';
 
 const log = createLogger('recording.ptt');
 
@@ -70,7 +72,9 @@ export async function startRecording(): Promise<void> {
     // Pre-check browser STT availability
     const browserSTT = (await import('../audio/browser-stt')).browserSTT;
     const useChunked = browserSTT.ready;
-    const sttLang = (document.getElementById('stt-language-select') as HTMLSelectElement | null)?.value || 'en';
+    // Priority: DOM select > localStorage > default 'zh'
+    const sttLang = (document.getElementById('stt-language-select') as HTMLSelectElement | null)?.value
+      || (() => { try { return localStorage.getItem(STORAGE_KEY + 'sttLang') || 'zh'; } catch (_e) { return 'zh'; } })();
     const silenceDetector = useChunked
       ? createSilenceDetector(getChunkMinDurationMs(), SILENCE_THRESHOLD, SILENCE_TRIGGER_MS)
       : null;
@@ -260,10 +264,21 @@ export function cancelRecording(): void {
 
 export function pttTap(e?: Event): void {
   if (e) e.preventDefault();
-  if (getInputMode() !== 'ptt') return;
+  const inputMode = getInputMode();
   const now = Date.now();
   if (e && (e as MouseEvent).type === 'click' && now - lastPttTouchAt < 650) return;
   if (e && (e as TouchEvent).type === 'touchend') lastPttTouchAt = now;
+
+  // In wakeword mode, mic button acts as stop during active recording
+  if (inputMode === 'wakeword') {
+    if (micState.isActive) {
+      stopWakeWordRecording();
+      audioPlayer.getAudioContext();
+    }
+    return;
+  }
+
+  if (inputMode !== 'ptt') return;
   if (micState.isActive) { stopRecording(); audioPlayer.getAudioContext(); }
   else { startRecording(); }
 }
