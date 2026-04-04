@@ -31,6 +31,7 @@ import {
   feedAudioSamples, verifySpeaker, isVoiceprintEnabled, hasEnrollment, initVoiceprint,
 } from './voiceprint-verifier';
 import { ensureWakewordScripts } from '../core/script-loader';
+import { initWhisperDetector, processWhisperChunk, getWhisperDetector } from './whisper-detector';
 
 function _saveToHistory(b64: string, botId: string, opts: { transcript?: string; cancelled?: boolean; status?: 'recorded' | 'transcribed' | 'sent' } = {}): void {
   voiceHistoryStore.saveRecording({
@@ -120,6 +121,23 @@ let skwsKeywordToBotId: Map<string, string> = new Map();
 
 let SHERPA_KWS_KEYWORDS: string[] = [];
 let SHERPA_KWS_AVAILABLE = false;
+
+// Whisper wake word detector state
+let whisperActive = false;
+let whisperKeywordToBotId: Map<string, string> = new Map();
+let WHISPER_KEYWORDS: string[] = [];
+let WHISPER_AVAILABLE = false;
+const WHISPER_DEFAULT_THRESHOLD = 0.7;
+const WHISPER_MIN_THRESHOLD = 0.3;
+const WHISPER_MAX_THRESHOLD = 0.95;
+let WHISPER_THRESHOLD = (() => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY + 'whisperThreshold');
+    const v = Number.parseFloat(raw || '');
+    if (Number.isFinite(v) && v >= WHISPER_MIN_THRESHOLD && v <= WHISPER_MAX_THRESHOLD) return v;
+  } catch (_e) { /* ignore */ }
+  return WHISPER_DEFAULT_THRESHOLD;
+})();
 
 // Pipeline debug state
 let OWW_PIPELINES: string[] = [];
@@ -1073,6 +1091,87 @@ export async function preloadOwwSessions(): Promise<void> {
   }
 }
 
+/** Check if Whisper encoder and models are available */
+export async function checkWhisperAvailability(): Promise<boolean> {
+  try {
+    // Check if encoder exists
+    const encoderResp = await fetch('/wakeword/whisper_encoder.onnx', { method: 'HEAD' });
+    if (!encoderResp.ok) return false;
+
+    // Check if any Whisper-trained models exist (version >= 3)
+    const configResp = await fetch('/wakeword/models');
+    if (!configResp.ok) return false;
+
+    const { models } = await configResp.json() as { models: Array<{ keyword: string; version: number }> };
+    const whisperModels = models.filter(m => m.version >= 3);
+
+    return whisperModels.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Initialize Whisper wake word pipeline */
+export async function initWhisperPipeline(): Promise<void> {
+  try {
+    await ensureWakewordScripts('openwakeword'); // Ensure ONNX Runtime is loaded
+    const ort = (window as unknown as { ort?: unknown }).ort;
+    if (!ort) {
+      log.warn('ONNX Runtime not available for Whisper');
+      return;
+    }
+
+    await ensureWakewordConfigLoaded();
+
+    // Build keyword -> head URL map
+    const headUrls: Record<string, string> = {};
+    whisperKeywordToBotId = new Map();
+
+    for (const [botId, kw] of Object.entries(wwMapping)) {
+      if (!BOT_IDS.includes(botId)) continue;
+      // Check if this keyword has a Whisper model (version >= 3)
+      const modelMeta = await fetch(`/wakeword/models/${encodeURIComponent(kw || '')}.json`).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (modelMeta && modelMeta.version >= 3) {
+        headUrls[kw] = `/wakeword/models/${encodeURIComponent(kw)}_head.onnx`;
+        whisperKeywordToBotId.set(kw, botId);
+      }
+    }
+
+    if (Object.keys(headUrls).length === 0) {
+      log.info('No Whisper models found, using OWW fallback');
+      WHISPER_AVAILABLE = false;
+      return;
+    }
+
+    WHISPER_KEYWORDS = Object.keys(headUrls);
+
+    await initWhisperDetector({
+      encoderUrl: '/wakeword/whisper_encoder.onnx',
+      headUrls,
+      threshold: WHISPER_THRESHOLD,
+      windowMs: 3000,
+      hopMs: 500,
+    });
+
+    WHISPER_AVAILABLE = true;
+    log.info('Whisper pipeline initialized', { keywords: WHISPER_KEYWORDS });
+
+  } catch (e) {
+    log.error('Failed to initialize Whisper pipeline', { error: String(e) });
+    WHISPER_AVAILABLE = false;
+  }
+}
+
+/** Check if Whisper pipeline is available */
+export function isWhisperAvailable(): boolean {
+  return WHISPER_AVAILABLE;
+}
+
+/** Get Whisper keywords */
+export function getWhisperKeywords(): string[] {
+  return WHISPER_KEYWORDS;
+}
+
 async function startSherpaKwsWakeWord(earlyMicP?: Promise<MediaStream | null> | null): Promise<void> {
   let _step = 'init';
   try {
@@ -1457,6 +1556,25 @@ async function startOpenWakeWord(earlyMicP?: Promise<MediaStream | null> | null)
 
 async function _owwProcessChunk(chunk: Float32Array, ort: { InferenceSession: { create: (url: string | Uint8Array, opts: unknown) => Promise<unknown> }; Tensor: new (type: string, data: unknown, dims: number[] | never[]) => unknown }, activeKws: string[]): Promise<void> {
   if (!owwMelSession || !owwActive) return;
+
+  // Whisper detection (if available and configured)
+  if (WHISPER_AVAILABLE && whisperActive && getWhisperDetector()?.isInitialized()) {
+    try {
+      const whisperResults = await processWhisperChunk(chunk);
+      for (const [keyword, confidence] of whisperResults) {
+        if (confidence >= WHISPER_THRESHOLD) {
+          const botId = whisperKeywordToBotId.get(keyword);
+          if (botId) {
+            log.info('Whisper wake word detected', { keyword, confidence, botId });
+            _handleWakeWordDetected(botId, keyword, confidence);
+            return; // Stop processing after detection
+          }
+        }
+      }
+    } catch (e) {
+      log.warn('Whisper detection error', { error: String(e) });
+    }
+  }
 
   // VAD — capture speech probability for barge-in gating
   try {
@@ -2010,6 +2128,62 @@ async function handleWakeWithVoiceprintGate(botId: string): Promise<void> {
   } else {
     log.debug('Voiceprint: speaker mismatch, ignoring');
   }
+}
+
+/** Handle wake word detection from any source (OWW, Whisper, Sherpa, etc.) */
+function _handleWakeWordDetected(botId: string, keyword: string, confidence: number): void {
+  const now = Date.now();
+
+  // Cooldown check (prevent duplicate detections)
+  const lastDetection = owwLastDetection[keyword] || 0;
+  if (now - lastDetection < 2000) return; // 2s cooldown
+
+  // Skip if already recording or not in wakeword mode
+  if (micState.isActive || getInputMode() !== 'wakeword') return;
+
+  // Skip during init cooldown
+  if (now - owwStartedAt < 2000) return;
+
+  owwLastDetection[keyword] = now;
+
+  // Barge-in during playback
+  if (audioPlayer.state !== 'idle') {
+    if (!wwAllowBargeIn) {
+      notifyWakeBlockedByReading();
+      return;
+    }
+    log.info('Wake word barge-in triggered', { keyword, confidence, botId });
+
+    // Voiceprint verification
+    if (isVoiceprintEnabled() && hasEnrollment()) {
+      verifySpeaker('barge_in').then((match) => {
+        if (!match) {
+          log.debug('Barge-in: voiceprint mismatch, ignoring');
+          return;
+        }
+        _clearSpeechGate();
+        interruptBot(getCurrentBotId());
+        setTimeout(() => {
+          if (!micState.isActive && getInputMode() === 'wakeword' && !wwPaused) {
+            handleWakeWithUnreadCheck(botId);
+          }
+        }, 150);
+      });
+    } else {
+      _clearSpeechGate();
+      interruptBot(getCurrentBotId());
+      setTimeout(() => {
+        if (!micState.isActive && getInputMode() === 'wakeword' && !wwPaused) {
+          handleWakeWithUnreadCheck(botId);
+        }
+      }, 150);
+    }
+    return;
+  }
+
+  // Normal wake
+  log.info('Wake word detected, starting recording', { keyword, confidence, botId });
+  handleWakeWithUnreadCheck(botId);
 }
 
 // ---- Wake with unread check ----

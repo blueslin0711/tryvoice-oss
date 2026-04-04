@@ -32,6 +32,9 @@ INFRASTRUCTURE_OWW_MODELS = {
     "embedding_model.onnx",
     "silero_vad.onnx",
     "speaker_verification.onnx",
+    "whisper_encoder.onnx",
+    "whisper_encoder_tiny.onnx",
+    "whisper_encoder_base.onnx",
 }
 
 
@@ -75,8 +78,13 @@ async def wakeword_models_list():
                         meta = json.load(mf)
                     entry["keyword"] = meta.get("keyword", "")
                     entry["version"] = meta.get("version")
+                    entry["method"] = meta.get("method", "oww")  # oww, mel_direct, whisper_transfer
                     if meta.get("created_at"):
                         entry["created"] = meta["created_at"]
+                    # Whisper-specific metadata
+                    if meta.get("method") == "whisper_transfer":
+                        entry["whisper_model"] = meta.get("whisper_model", "tiny")
+                        entry["d_model"] = meta.get("d_model", 384)
                 except Exception:
                     pass
         else:

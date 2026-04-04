@@ -69,11 +69,13 @@ class TrainingService:
         # Check available training methods
         self._has_docker = self._check_docker()
         self._has_torch = self._check_torch()
+        self._has_whisper_encoder = self._check_whisper_encoder()
 
         logger.bind(component="training_service").info(
-            "Training service initialized (docker={}, torch={})",
+            "Training service initialized (docker={}, torch={}, whisper={})",
             self._has_docker,
             self._has_torch,
+            self._has_whisper_encoder,
         )
 
     def _check_docker(self) -> bool:
@@ -96,6 +98,11 @@ class TrainingService:
             return True
         except ImportError:
             return False
+
+    def _check_whisper_encoder(self) -> bool:
+        """Check if Whisper encoder ONNX is available."""
+        encoder_path = WAKEWORD_DIR / "oww" / "whisper_encoder.onnx"
+        return encoder_path.exists()
 
     def create_session(self, keyword: str) -> str:
         """Create a new training session.
@@ -273,7 +280,12 @@ class TrainingService:
             output_dir = WAKEWORD_DIR / "oww"
 
             # Try real training
-            if task.use_docker and self._has_docker:
+            # Prefer Whisper transfer learning when available and sample count is low
+            use_whisper = self._has_whisper_encoder and session.sample_count < 50
+
+            if use_whisper and self._has_torch:
+                self._run_whisper_training(task, session, output_dir)
+            elif task.use_docker and self._has_docker:
                 self._run_docker_training(task, session, output_dir)
             elif self._has_torch:
                 self._run_local_training(task, session, output_dir)
@@ -533,6 +545,117 @@ class TrainingService:
         logger.bind(component="training_service").info(
             "Local training task '{}' completed",
             task.task_id,
+        )
+
+    def _run_whisper_training(
+        self,
+        task: TrainingTask,
+        session: TrainingSession,
+        output_dir: Path,
+    ) -> None:
+        """Run Whisper transfer learning training."""
+        logger.bind(component="training_service").info(
+            "Running Whisper transfer learning for task '{}'",
+            task.task_id,
+        )
+
+        script_path = PROJECT_ROOT / "scripts" / "train_wakeword_whisper.py"
+        if not script_path.exists():
+            raise RuntimeError(f"Whisper training script not found: {script_path}")
+
+        samples_dir = session.samples_dir / "positive"
+        negative_dir = session.samples_dir / "negative"
+        encoder_path = WAKEWORD_DIR / "oww" / "whisper_encoder.onnx"
+
+        # Whisper 训练步数较少
+        whisper_steps = min(task.steps, 5000)
+
+        cmd = [
+            sys.executable,
+            str(script_path),
+            "--samples", str(samples_dir),
+            "--keyword", session.keyword,
+            "--output-dir", str(output_dir),
+            "--negative-samples", str(negative_dir),
+            "--steps", str(whisper_steps),
+            "--encoder-path", str(encoder_path),
+        ]
+
+        logger.bind(component="training_service").debug(
+            "Whisper command: {}",
+            " ".join(cmd),
+        )
+
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=PROJECT_ROOT,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+
+        with self._lock:
+            task.process = process
+
+        # Parse output for progress
+        output_lines = []
+        for line in process.stdout:
+            output_lines.append(line)
+            line_stripped = line.strip()
+            logger.bind(component="training_service").debug("Whisper: {}", line_stripped)
+
+            # Parse progress: "Step 500: Loss=0.1234, Train=85.0%, Val=82.0% (Pos=90.0%, Neg=75.0%)"
+            match = re.search(
+                r"Step (\d+): Loss=([\d.]+), Train=([\d.]+)%, Val=([\d.]+)% \(Pos=([\d.]+)%, Neg=([\d.]+)%\)",
+                line_stripped
+            )
+            if match:
+                step = int(match.group(1))
+                loss = float(match.group(2))
+                val_acc = float(match.group(4)) / 100.0
+
+                with self._lock:
+                    task.current_step = step
+                    task.loss = loss
+                    task.accuracy = val_acc
+
+                logger.bind(component="training_service").info(
+                    "Whisper training progress: step {}/{}, loss={:.4f}, val={:.1%}",
+                    step, whisper_steps, loss, val_acc
+                )
+
+            # Check for cancellation
+            if task.status == "cancelled":
+                process.terminate()
+                return
+
+        process.wait()
+
+        if process.returncode != 0:
+            output = "".join(output_lines[-50:])
+            raise RuntimeError(f"Whisper training failed: {output}")
+
+        # Check for model file (head + metadata)
+        safe_name = session.keyword.replace(" ", "_")
+        head_path = output_dir / f"{safe_name}_head.onnx"
+        meta_path = output_dir / f"{safe_name}.json"
+
+        if not head_path.exists():
+            raise RuntimeError(f"Head model file not created: {head_path}")
+
+        # Use the head path as model_path for Whisper models
+        with self._lock:
+            task.status = "completed"
+            task.completed_at = datetime.now().isoformat()
+            task.current_step = whisper_steps
+            task.model_path = head_path
+
+        logger.bind(component="training_service").info(
+            "Whisper training task '{}' completed (head: {}, meta: {})",
+            task.task_id,
+            head_path,
+            meta_path,
         )
 
     def _run_simulated_training(
