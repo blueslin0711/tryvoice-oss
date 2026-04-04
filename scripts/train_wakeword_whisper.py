@@ -49,6 +49,14 @@ def compute_log_mel(audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
     # 转换为 torch tensor
     waveform = torch.from_numpy(audio.astype(np.float32)).unsqueeze(0)
 
+    # 检查音频长度是否足够
+    # Whisper 需要至少 n_fft (400) 个样本才能生成一帧
+    min_samples = 400
+    if len(audio) < min_samples:
+        # 填充到最小长度
+        padding = torch.zeros(1, min_samples - len(audio))
+        waveform = torch.cat([waveform, padding], dim=1)
+
     # Whisper 的 mel 参数
     n_fft = 400
     hop_length = 160
@@ -165,6 +173,11 @@ def load_audio_samples(samples_dir: Path, target_rms: float = 0.1) -> list[np.nd
             # 单声道
             if len(data.shape) > 1:
                 data = data[:, 0]
+
+            # 跳过太短的音频（小于 0.1 秒）
+            if len(data) < sr * 0.1:
+                print(f"警告: 跳过太短的音频 {filepath.name} ({len(data)/sr:.2f}s)")
+                continue
 
             # 音量归一化
             rms = np.sqrt(np.mean(data ** 2))
@@ -478,7 +491,7 @@ def main():
         }
     }
 
-    meta_path = output_dir / f"{safe_name}.json"
+    meta_path = output_dir / f"{safe_name}_head.json"
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)
 
