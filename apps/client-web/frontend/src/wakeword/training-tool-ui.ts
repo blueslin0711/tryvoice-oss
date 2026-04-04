@@ -132,6 +132,7 @@ export interface SampleCollectionHandlers {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onDeleteSample: (id: string) => void;
+  onPlaySample: (id: string) => void;
   onGenerateTTS: (count: number) => void;
   onBack: () => void;
   onNext: () => void;
@@ -150,6 +151,22 @@ export function renderSampleCollection(
 
   const recordBtnColor = state.recordingInProgress ? '#f44336' : '#667eea';
   const recordBtnText = state.recordingInProgress ? '停止录音' : '开始录音';
+
+  // 样本列表 HTML
+  const sampleListHtml = state.micSamples.length > 0 ? `
+    <div style="margin-bottom:12px;">
+      <div style="font-size:12px;color:#666;margin-bottom:8px;">已录制样本</div>
+      ${state.micSamples.map((sample, i) => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0a0a18;border-radius:6px;margin-bottom:4px;">
+          <div style="font-size:13px;color:#888;">样本 ${i + 1} (${sample.duration.toFixed(1)}s)</div>
+          <div style="display:flex;gap:8px;">
+            <button id="tt-play-${sample.id}" style="background:transparent;border:1px solid #2a2a3a;color:#667eea;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:12px;">▶ 播放</button>
+            <button id="tt-delete-${sample.id}" style="background:transparent;border:1px solid #2a2a3a;color:#f44336;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:12px;">删除</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  ` : '';
 
   overlay.innerHTML = `
     <div style="width:100%;max-width:500px;padding:24px;">
@@ -179,6 +196,16 @@ export function renderSampleCollection(
         <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:4px;">麦克风录制</div>
         <div style="font-size:12px;color:#666;margin-bottom:16px;">录制真实语音可提高识别准确率</div>
 
+        <!-- Waveform canvas -->
+        <div style="position:relative;margin-bottom:16px;height:72px;">
+          <canvas id="tt-waveform" width="380" height="72"
+            style="width:100%;height:72px;border-radius:10px;background:#0a0a18;display:block;"></canvas>
+          <div id="tt-waveform-idle"
+            style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#2a2a4a;font-size:13px;pointer-events:none;">
+            点击 ● 开始录音
+          </div>
+        </div>
+
         <div style="text-align:center;">
           <button
             id="tt-record-btn"
@@ -189,6 +216,9 @@ export function renderSampleCollection(
           <div style="font-size:12px;color:#888;margin-top:8px;">${recordBtnText}</div>
         </div>
       </div>
+
+      <!-- Sample List -->
+      ${sampleListHtml}
 
       <!-- TTS Generation Section -->
       <div style="background:#111122;border-radius:12px;padding:16px;margin-bottom:20px;">
@@ -231,6 +261,16 @@ export function renderSampleCollection(
   document.getElementById('tt-tts-5-btn')?.addEventListener('click', () => handlers.onGenerateTTS(5));
   document.getElementById('tt-tts-10-btn')?.addEventListener('click', () => handlers.onGenerateTTS(10));
   document.getElementById('tt-tts-20-btn')?.addEventListener('click', () => handlers.onGenerateTTS(20));
+
+  // 样本播放和删除按钮事件
+  state.micSamples.forEach(sample => {
+    document.getElementById(`tt-play-${sample.id}`)?.addEventListener('click', () => {
+      handlers.onPlaySample(sample.id);
+    });
+    document.getElementById(`tt-delete-${sample.id}`)?.addEventListener('click', () => {
+      handlers.onDeleteSample(sample.id);
+    });
+  });
 }
 
 // ──────────────────────────────────────────────
@@ -429,11 +469,22 @@ export function renderInstall(
 ): void {
   if (!overlay) return;
 
+  // 样本验证路径显示
+  const samplePathHtml = state.sampleVerificationPath ? `
+    <div style="background:#111122;border-radius:8px;padding:12px;margin-bottom:24px;text-align:left;">
+      <div style="font-size:12px;color:#666;margin-bottom:4px;">样本验证路径</div>
+      <div style="font-size:12px;color:#888;font-family:monospace;word-break:break-all;">${state.sampleVerificationPath}</div>
+      <div style="font-size:11px;color:#555;margin-top:6px;">包含 positive/ 和 negative/ 目录，可手动播放验证</div>
+    </div>
+  ` : '';
+
   overlay.innerHTML = `
     <div style="width:100%;max-width:400px;padding:32px;text-align:center;">
       <div style="font-size:48px;margin-bottom:16px;">✓</div>
       <div style="font-size:24px;font-weight:700;color:#fff;margin-bottom:8px;">训练完成</div>
-      <div style="font-size:14px;color:#888;margin-bottom:32px;">唤醒词 "${state.keyword}" 模型已准备好</div>
+      <div style="font-size:14px;color:#888;margin-bottom:24px;">唤醒词 "${state.keyword}" 模型已准备好</div>
+
+      ${samplePathHtml}
 
       <button
         id="tt-install-btn"
@@ -444,14 +495,14 @@ export function renderInstall(
 
       <button
         id="tt-download-btn"
-        style="width:100%;padding:14px;font-size:15px;font-weight:600;background:transparent;border:1px solid #2a2a3a;border-radius:8px;color:#888;cursor:pointer;margin-bottom:24px;"
+        style="width:100%;padding:14px;font-size:15px;font-weight:600;background:transparent;border:1px solid #2a2a3a;border-radius:8px;color:#888;cursor:pointer;margin-bottom:12px;"
       >
         下载模型文件
       </button>
 
       <button
         id="tt-close-btn"
-        style="margin-top:24px;background:transparent;border:none;color:#666;cursor:pointer;font-size:14px;"
+        style="background:transparent;border:none;color:#666;cursor:pointer;font-size:14px;"
       >
         关闭
       </button>

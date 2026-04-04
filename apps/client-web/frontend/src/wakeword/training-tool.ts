@@ -76,6 +76,7 @@ export interface TrainingToolState {
   // Stage 5: Install
   modelFile: string | null;
   modelData: ArrayBuffer | null;
+  sampleVerificationPath: string | null;
 }
 
 // ──────────────────────────────────────────────
@@ -92,7 +93,7 @@ export function createInitialState(): TrainingToolState {
     trainingMode: 'new',
     micSamples: [],
     ttsSamples: [],
-    targetSampleCount: 20,
+    targetSampleCount: 100,
     recordingInProgress: false,
     sessionId: null,
     taskId: null,
@@ -105,6 +106,7 @@ export function createInitialState(): TrainingToolState {
     batchTestingProgress: null,
     modelFile: null,
     modelData: null,
+    sampleVerificationPath: null,
   };
 }
 
@@ -244,6 +246,10 @@ let audioContext: AudioContext | null = null;
 let mediaStream: MediaStream | null = null;
 let recordingChunks: Float32Array[] = [];
 
+// 波形动画相关
+let analyserNode: AnalyserNode | null = null;
+let waveformAnimId: number | null = null;
+
 export async function startTrainingTool(): Promise<void> {
   resetState();
   collector = new SampleCollector();
@@ -336,6 +342,12 @@ function renderSamplesStage(): void {
       if (state) {
         state.micSamples = collector?.getSamples() || [];
         renderCurrentStage();
+      }
+    },
+    onPlaySample: (id: string) => {
+      const sample = collector?.getSamples().find(s => s.id === id);
+      if (sample && sample.audioData) {
+        playSample(sample.audioData);
       }
     },
     onGenerateTTS: async (count: number) => {
@@ -615,9 +627,16 @@ function renderInstallStage(): void {
 
 async function startRecording(): Promise<void> {
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: false, noiseSuppression: false },
+    });
     audioContext = new AudioContext({ sampleRate: 16000 });
     const source = audioContext.createMediaStreamSource(mediaStream);
+
+    // 创建 AnalyserNode 用于波形可视化
+    analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = 256;
+    analyserNode.smoothingTimeConstant = 0.75;
 
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
     processor.onaudioprocess = (e) => {
@@ -625,14 +644,24 @@ async function startRecording(): Promise<void> {
       recordingChunks.push(new Float32Array(inputData));
     };
 
+    source.connect(analyserNode);
     source.connect(processor);
     processor.connect(audioContext.destination);
+
+    // 启动波形动画
+    startWaveformAnimation();
+
+    // 更新 UI
+    updateRecordingUI(true);
   } catch (e) {
     log.error('Failed to start recording', { error: String(e) });
   }
 }
 
 function stopRecording(): void {
+  // 停止波形动画
+  stopWaveformAnimation();
+
   if (mediaStream) {
     mediaStream.getTracks().forEach(t => t.stop());
     mediaStream = null;
@@ -642,6 +671,8 @@ function stopRecording(): void {
     audioContext.close();
     audioContext = null;
   }
+
+  analyserNode = null;
 
   if (recordingChunks.length > 0 && collector) {
     const totalLength = recordingChunks.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -655,6 +686,79 @@ function stopRecording(): void {
   }
 
   recordingChunks = [];
+
+  // 更新 UI
+  updateRecordingUI(false);
+}
+
+function updateRecordingUI(recording: boolean): void {
+  const idle = document.getElementById('tt-waveform-idle');
+  if (idle) {
+    idle.style.display = recording ? 'none' : 'flex';
+  }
+}
+
+function startWaveformAnimation(): void {
+  const canvas = document.getElementById('tt-waveform') as HTMLCanvasElement | null;
+  if (!canvas || !analyserNode) return;
+
+  const ctx2d = canvas.getContext('2d')!;
+  const bufferLength = analyserNode.frequencyBinCount; // 128 for fftSize=256
+  const dataArray = new Uint8Array(bufferLength);
+
+  const BAR_COUNT = 40;
+
+  function draw(): void {
+    if (!analyserNode || !canvas) return;
+    waveformAnimId = requestAnimationFrame(draw);
+
+    analyserNode.getByteFrequencyData(dataArray);
+
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx2d.clearRect(0, 0, W, H);
+
+    const slotW = W / BAR_COUNT;
+    const barW = Math.max(2, Math.floor(slotW * 0.6));
+    const step = Math.floor(bufferLength / BAR_COUNT);
+
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const value = dataArray[i * step] / 255;
+      const barH = Math.max(3, value * (H - 12) * 0.9);
+      const x = Math.floor(i * slotW + (slotW - barW) / 2);
+      const y = (H - barH) / 2;
+
+      // Blue → purple gradient keyed to signal strength
+      const hue = 220 + value * 55;
+      const sat = 50 + value * 40;
+      const light = 32 + value * 28;
+      ctx2d.fillStyle = `hsl(${hue},${sat}%,${light}%)`;
+      ctx2d.fillRect(x, y, barW, barH);
+    }
+  }
+
+  draw();
+}
+
+function stopWaveformAnimation(): void {
+  if (waveformAnimId !== null) {
+    cancelAnimationFrame(waveformAnimId);
+    waveformAnimId = null;
+  }
+  const canvas = document.getElementById('tt-waveform') as HTMLCanvasElement | null;
+  canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// 播放样本
+function playSample(audioData: Float32Array): void {
+  const ctx = new AudioContext({ sampleRate: 16000 });
+  const buffer = ctx.createBuffer(1, audioData.length, 16000);
+  buffer.getChannelData(0).set(audioData);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start();
+  source.onended = () => ctx.close();
 }
 
 // ──────────────────────────────────────────────
@@ -748,6 +852,10 @@ async function pollTrainingStatus(): Promise<void> {
       // 保存模型 URL
       if (data.modelUrl) {
         state.modelFile = data.modelUrl;
+      }
+      // 保存样本验证路径
+      if (data.sampleVerificationPath) {
+        state.sampleVerificationPath = data.sampleVerificationPath;
       }
       state.stage = 'validation';
       renderCurrentStage();

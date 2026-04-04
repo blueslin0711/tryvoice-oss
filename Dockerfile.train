@@ -20,7 +20,9 @@ RUN pip install --no-cache-dir \
     scipy
 
 # 复制脚本
+COPY scripts/train_wakeword_mel.py /app/
 COPY scripts/train_wakeword_v3.py /app/
 COPY scripts/export_model.py /app/
 
-ENTRYPOINT ["python", "/app/train_wakeword_v3.py"]
+# 默认使用 Mel 训练脚本
+ENTRYPOINT ["python", "/app/train_wakeword_mel.py"]

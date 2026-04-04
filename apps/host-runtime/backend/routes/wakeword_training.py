@@ -395,7 +395,9 @@ async def detect_wakeword(request: dict):
     Returns:
         Detection result with confidence
     """
+    import json
     import numpy as np
+    from backend.paths import WAKEWORD_DIR
 
     keyword = request.get("keyword", "")
     audio_data = request.get("audio", [])
@@ -414,18 +416,20 @@ async def detect_wakeword(request: dict):
         # 检查模型是否存在
         safe_name = keyword.replace(" ", "_")
         model_path = WAKEWORD_DIR / "oww" / f"{safe_name}.onnx"
+        meta_path = WAKEWORD_DIR / "oww" / f"{safe_name}.json"
+
+        logger.bind(component="wakeword_training").info(
+            "Detecting wakeword '{}' model_path={} exists={}",
+            keyword,
+            model_path,
+            model_path.exists(),
+        )
 
         if not model_path.exists():
             # 模型不存在，使用简单能量检测作为回退
             energy = np.sqrt(np.mean(audio ** 2))
             detected = energy > 0.02
             confidence = min(energy * 5, 1.0)
-
-            logger.bind(component="wakeword_training").debug(
-                "Model not found, using energy fallback: energy={:.4f}, detected={}",
-                energy,
-                detected,
-            )
 
             return JSONResponse({
                 "detected": detected,
@@ -434,94 +438,126 @@ async def detect_wakeword(request: dict):
                 "modelPath": str(model_path),
             })
 
-        # 使用 ONNX Runtime 运行模型
-        import onnxruntime as ort
+        # 检查模型类型
+        model_version = 1  # 默认使用 OWW embedding 方法
+        sequence_length = 16  # OWW 默认序列长度
+        if meta_path.exists():
+            try:
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                model_version = meta.get("version", 1)
+                sequence_length = meta.get("sequence_length", 16)
+                logger.bind(component="wakeword_training").info(
+                    "Model meta loaded: version={}, sequence_length={}",
+                    model_version, sequence_length,
+                )
+            except Exception as meta_err:
+                logger.bind(component="wakeword_training").warning(
+                    "Failed to load meta: {}", str(meta_err),
+                )
+                pass
 
-        # 加载 OWW 基础模型和关键词模型
+        # 根据模型版本选择检测方法
+        logger.bind(component="wakeword_training").info(
+            "Selecting detection method: model_version={}", model_version,
+        )
+        if model_version >= 2:
+            # Mel 直接训练模型
+            return await _detect_mel_model(audio, model_path, sequence_length)
+        else:
+            # OWW embedding 模型
+            return await _detect_oww_model(audio, model_path)
+
+    except Exception as e:
+        logger.bind(component="wakeword_training").error(
+            "Detection error: {}",
+            str(e),
+        )
+        return JSONResponse({
+            "detected": False,
+            "confidence": 0,
+            "error": str(e),
+        })
+
+
+async def _detect_mel_model(
+    audio: np.ndarray,
+    model_path: Path,
+    sequence_length: int = 64,
+) -> JSONResponse:
+    """使用 Mel 直接训练的模型进行检测
+
+    Args:
+        audio: 音频数据 (float32)
+        model_path: 模型路径
+        sequence_length: 序列长度
+
+    Returns:
+        检测结果
+    """
+    import numpy as np
+    import onnxruntime as ort
+    from backend.paths import WAKEWORD_DIR
+
+    try:
+        # 加载模型
+        kw_session = ort.InferenceSession(str(model_path))
         mel_path = WAKEWORD_DIR / "oww" / "melspectrogram.onnx"
-        emb_path = WAKEWORD_DIR / "oww" / "embedding_model.onnx"
 
-        if not mel_path.exists() or not emb_path.exists():
-            logger.bind(component="wakeword_training").warning(
-                "OWW base models not found, using energy fallback"
-            )
-            energy = np.sqrt(np.mean(audio ** 2))
+        if not mel_path.exists():
             return JSONResponse({
-                "detected": energy > 0.02,
-                "confidence": min(energy * 5, 1.0),
-                "method": "energy_fallback_no_base",
+                "detected": False,
+                "confidence": 0,
+                "error": "Mel model not found",
             })
 
         mel_session = ort.InferenceSession(str(mel_path))
-        emb_session = ort.InferenceSession(str(emb_path))
-        kw_session = ort.InferenceSession(str(model_path))
-
-        # 获取输入名称
         mel_input_name = mel_session.get_inputs()[0].name
-        emb_input_name = emb_session.get_inputs()[0].name
 
-        # 提取 embedding 序列（与训练时相同的方式）
-        chunk_size = 1280  # 80ms
+        # 音量归一化
+        rms = np.sqrt(np.mean(audio ** 2))
+        if rms > 1e-8:
+            audio = audio * (0.1 / rms)
+
+        # 提取 Mel 频谱
+        chunk_size = 1280
         mel_buffer = []
-        embeddings = []
 
-        # 填充音频到足够长度
-        min_len = chunk_size * 20
+        # 确保足够长度
+        min_len = 16000 * 3
         if len(audio) < min_len:
             audio = np.pad(audio, (0, min_len - len(audio)))
 
         for i in range(0, len(audio) - chunk_size + 1, chunk_size):
-            chunk = audio[i : i + chunk_size].astype(np.float32)
-
+            chunk = audio[i:i + chunk_size].astype(np.float32)
             try:
-                # Mel spectrogram
                 mel_out = mel_session.run(None, {mel_input_name: chunk.reshape(1, -1)})
-                mel_frames = mel_out[0]
+                frames = mel_out[0]
 
-                # 处理 mel 输出
-                if mel_frames is not None and len(mel_frames) > 0:
-                    if len(mel_frames.shape) == 4:
-                        n_frames = mel_frames.shape[2]
-                        for f in range(n_frames):
-                            frame = mel_frames[0, 0, f, :]
-                            frame = (frame / 10.0) + 2.0
-                            mel_buffer.append(frame)
-                    elif len(mel_frames.shape) == 3:
-                        n_frames = mel_frames.shape[1]
-                        for f in range(n_frames):
-                            frame = mel_frames[0, f, :]
-                            frame = (frame / 10.0) + 2.0
-                            mel_buffer.append(frame)
-
-                # 当 mel buffer 足够时，生成 embedding
-                while len(mel_buffer) >= 76:
-                    mel_for_emb = np.array(mel_buffer[:76])
-                    emb_input = mel_for_emb.reshape(1, 76, 32, 1).astype(np.float32)
-                    emb_out = emb_session.run(None, {emb_input_name: emb_input})
-                    emb = emb_out[0].flatten()[:96]
-                    embeddings.append(emb)
-                    mel_buffer = mel_buffer[8:]
-
-            except Exception as e:
+                if frames is not None and len(frames) > 0:
+                    if len(frames.shape) == 4:
+                        for f in range(frames.shape[2]):
+                            mel_buffer.append(frames[0, 0, f, :])
+                    elif len(frames.shape) == 3:
+                        for f in range(frames.shape[1]):
+                            mel_buffer.append(frames[0, f, :])
+            except:
                 continue
 
-        if len(embeddings) < 16:
-            logger.bind(component="wakeword_training").debug(
-                "Not enough embeddings: {}",
-                len(embeddings),
-            )
+        if len(mel_buffer) < sequence_length:
             return JSONResponse({
                 "detected": False,
                 "confidence": 0,
-                "method": "onnx_model",
-                "embeddings": len(embeddings),
+                "method": "mel_model",
+                "frames": len(mel_buffer),
             })
 
-        # 构建序列 (16, 96)
+        # 构建序列
         sequences = []
-        for i in range(len(embeddings) - 16 + 1):
-            seq = np.array(embeddings[i : i + 16], dtype=np.float32)
-            sequences.append(seq)
+        for i in range(0, len(mel_buffer) - sequence_length + 1, sequence_length // 2):
+            seq = np.array(mel_buffer[i:i + sequence_length], dtype=np.float32)
+            if seq.shape == (sequence_length, 32):
+                sequences.append(seq)
 
         if not sequences:
             return JSONResponse({
@@ -529,19 +565,18 @@ async def detect_wakeword(request: dict):
                 "confidence": 0,
             })
 
-        # 运行关键词模型推理
+        # 运行推理
         input_array = np.array(sequences, dtype=np.float32)
-        outputs = kw_session.run(None, {"input": input_array})
+        outputs = kw_session.run(None, {"input": input_array})[0].flatten()
 
-        # 获取最大置信度
-        predictions = outputs[0].flatten()
-        max_confidence = float(np.max(predictions))
-        mean_confidence = float(np.mean(predictions))
-        detected = max_confidence > 0.5
+        max_confidence = float(np.max(outputs))
+        mean_confidence = float(np.mean(outputs))
+
+        # 阈值判断 - 使用更合理的阈值
+        detected = max_confidence > 0.7
 
         logger.bind(component="wakeword_training").info(
-            "Detection: keyword='{}', sequences={}, max_conf={:.4f}, mean_conf={:.4f}, detected={}",
-            keyword,
+            "Mel Detection: sequences={}, max_conf={:.4f}, mean_conf={:.4f}, detected={}",
             len(sequences),
             max_confidence,
             mean_confidence,
@@ -552,14 +587,135 @@ async def detect_wakeword(request: dict):
             "detected": detected,
             "confidence": max_confidence,
             "meanConfidence": mean_confidence,
-            "method": "onnx_model",
+            "method": "mel_model",
             "sequences": len(sequences),
         })
 
     except Exception as e:
         logger.bind(component="wakeword_training").error(
-            "Detection error: {}",
+            "Mel detection error: {}",
             str(e),
+        )
+        return JSONResponse({
+            "detected": False,
+            "confidence": 0,
+            "error": str(e),
+        })
+
+
+async def _detect_oww_model(
+    audio: np.ndarray,
+    model_path: Path,
+) -> JSONResponse:
+    """使用 OWW embedding 模型进行检测（旧版本兼容）
+
+    Args:
+        audio: 音频数据 (float32)
+        model_path: 模型路径
+
+    Returns:
+        检测结果
+    """
+    import numpy as np
+    import onnxruntime as ort
+    from backend.paths import WAKEWORD_DIR
+
+    try:
+        # 加载 OWW 基础模型
+        mel_path = WAKEWORD_DIR / "oww" / "melspectrogram.onnx"
+        emb_path = WAKEWORD_DIR / "oww" / "embedding_model.onnx"
+
+        if not mel_path.exists() or not emb_path.exists():
+            # 回退到能量检测
+            energy = np.sqrt(np.mean(audio ** 2))
+            return JSONResponse({
+                "detected": energy > 0.02,
+                "confidence": min(energy * 5, 1.0),
+                "method": "energy_fallback",
+            })
+
+        mel_session = ort.InferenceSession(str(mel_path))
+        emb_session = ort.InferenceSession(str(emb_path))
+        kw_session = ort.InferenceSession(str(model_path))
+
+        # 获取输入名称
+        mel_input_name = mel_session.get_inputs()[0].name
+        emb_input_name = emb_session.get_inputs()[0].name
+
+        # 提取 embedding 序列
+        chunk_size = 1280
+        mel_buffer = []
+        embeddings = []
+
+        min_len = 16000 * 5
+        if len(audio) < min_len:
+            audio = np.pad(audio, (0, min_len - len(audio)))
+
+        for i in range(0, len(audio) - chunk_size + 1, chunk_size):
+            chunk = audio[i:i + chunk_size].astype(np.float32)
+            try:
+                mel_out = mel_session.run(None, {mel_input_name: chunk.reshape(1, -1)})
+                frames = mel_out[0]
+
+                if frames is not None and len(frames) > 0:
+                    if len(frames.shape) == 4:
+                        for f in range(frames.shape[2]):
+                            frame = frames[0, 0, f, :]
+                            frame = (frame / 10.0) + 2.0
+                            mel_buffer.append(frame)
+                    elif len(frames.shape) == 3:
+                        for f in range(frames.shape[1]):
+                            frame = frames[0, f, :]
+                            frame = (frame / 10.0) + 2.0
+                            mel_buffer.append(frame)
+
+                while len(mel_buffer) >= 76:
+                    mel_for_emb = np.array(mel_buffer[:76])
+                    emb_input = mel_for_emb.reshape(1, 76, 32, 1).astype(np.float32)
+                    emb_out = emb_session.run(None, {emb_input_name: emb_input})
+                    embeddings.append(emb_out[0].flatten()[:96])
+                    mel_buffer = mel_buffer[8:]
+            except:
+                continue
+
+        if len(embeddings) < 16:
+            return JSONResponse({
+                "detected": False,
+                "confidence": 0,
+                "method": "oww_model",
+            })
+
+        # 构建序列
+        sequences = [np.array(embeddings[i:i+16], dtype=np.float32)
+                     for i in range(len(embeddings) - 16 + 1)]
+
+        if not sequences:
+            return JSONResponse({"detected": False, "confidence": 0})
+
+        # 运行推理
+        input_array = np.array(sequences, dtype=np.float32)
+        outputs = kw_session.run(None, {"input": input_array})[0].flatten()
+
+        max_confidence = float(np.max(outputs))
+        mean_confidence = float(np.mean(outputs))
+        detected = max_confidence > 0.95 and mean_confidence > 0.7
+
+        logger.bind(component="wakeword_training").info(
+            "OWW Detection: sequences={}, max_conf={:.4f}, mean_conf={:.4f}, detected={}",
+            len(sequences), max_confidence, mean_confidence, detected,
+        )
+
+        return JSONResponse({
+            "detected": detected,
+            "confidence": max_confidence,
+            "meanConfidence": mean_confidence,
+            "method": "oww_model",
+            "sequences": len(sequences),
+        })
+
+    except Exception as e:
+        logger.bind(component="wakeword_training").error(
+            "OWW detection error: {}", str(e)
         )
         return JSONResponse({
             "detected": False,

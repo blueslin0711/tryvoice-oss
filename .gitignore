@@ -55,3 +55,5 @@ playwright-report/
 apps/host-runtime/backend/wakeword/sherpa-kws/*.onnx
 apps/host-runtime/backend/static-dist/static/sherpa-onnx-wasm-kws-main.wasm
 apps/host-runtime/backend/static-dist/static/sherpa-onnx-wasm-kws-main.data
+apps/host-runtime/backend/wakeword/sample_library/
+apps/host-runtime/backend/wakeword/training_samples/

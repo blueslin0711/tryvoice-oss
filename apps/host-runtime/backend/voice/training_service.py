@@ -157,14 +157,32 @@ class TrainingService:
         from scipy.io import wavfile
 
         positive_dir = session.samples_dir / "positive"
+
+        # 创建固定的样本验证目录
+        verification_dir = WAKEWORD_DIR / "training_samples" / session.keyword / "positive"
+        verification_dir.mkdir(parents=True, exist_ok=True)
+
         count = 0
+        start_idx = session.sample_count
 
         for i, audio in enumerate(samples):
+            # 音量归一化 - 确保所有样本音量一致
+            rms = np.sqrt(np.mean(audio ** 2))
+            if rms > 1e-8:
+                target_rms = 0.1
+                audio = audio * (target_rms / rms)
+
             # Convert float32 to int16 for WAV
             audio_int16 = (audio * 32768).astype(np.int16)
-            filename = f"{source}_{session.sample_count + i}.wav"
+
+            # 保存到 session 临时目录
+            filename = f"{source}_{start_idx + i}.wav"
             filepath = positive_dir / filename
             wavfile.write(str(filepath), 16000, audio_int16)
+
+            # 同时保存到验证目录
+            verification_filename = f"{source}_{start_idx + i}.wav"
+            wavfile.write(str(verification_dir / verification_filename), 16000, audio_int16)
             count += 1
 
         with self._lock:
@@ -179,6 +197,10 @@ class TrainingService:
             count,
             source,
             session_id,
+        )
+        logger.bind(component="training_service").info(
+            "Positive samples saved to: {}",
+            verification_dir,
         )
         return count
 
@@ -244,7 +266,8 @@ class TrainingService:
                 task.status = "running"
                 task.started_at = datetime.now().isoformat()
 
-            # Prepare negative samples
+            # Prepare samples (positive and negative)
+            self._prepare_positive_samples(session)
             self._prepare_negative_samples(session)
 
             output_dir = WAKEWORD_DIR / "oww"
@@ -323,19 +346,23 @@ class TrainingService:
             "docker", "run", "--rm",
             "-v", f"{samples_dir}:/samples:ro",
             "-v", f"{output_dir}:/output",
+        ]
+
+        # Add negative samples volume mount if available
+        if negative_dir.exists() and any(negative_dir.iterdir()):
+            cmd.extend(["-v", f"{negative_dir}:/negative:ro"])
+
+        cmd.extend([
             image_name,
             "--samples", "/samples",
             "--keyword", session.keyword,
             "--output-dir", "/output",
             "--steps", str(task.steps),
-        ]
+        ])
 
-        # Add negative samples if available
+        # Add negative samples argument if available
         if negative_dir.exists() and any(negative_dir.iterdir()):
             cmd.extend(["--negative-samples", "/negative"])
-            # Re-add the negative volume mount
-            cmd.insert(4, "-v")
-            cmd.insert(5, f"{negative_dir}:/negative:ro")
 
         logger.bind(component="training_service").debug(
             "Docker command: {}",
@@ -360,21 +387,27 @@ class TrainingService:
             line_stripped = line.strip()
             logger.bind(component="training_service").debug("Docker: {}", line_stripped)
 
-            # Parse progress: "Step 2000: Loss=0.0500 Acc=85.0%"
-            match = re.search(r"Step (\d+): Loss=([\d.]+) Acc=([\d.]+)%", line_stripped)
+            # Parse progress: "Step 2000: Loss=0.0500, Train=85.0%, Val=82.0% (Pos=90.0%, Neg=75.0%)"
+            match = re.search(
+                r"Step (\d+): Loss=([\d.]+), Train=([\d.]+)%, Val=([\d.]+)% \(Pos=([\d.]+)%, Neg=([\d.]+)%\)",
+                line_stripped
+            )
             if match:
                 step = int(match.group(1))
                 loss = float(match.group(2))
-                accuracy = float(match.group(3)) / 100.0
+                train_acc = float(match.group(3)) / 100.0
+                val_acc = float(match.group(4)) / 100.0
+                pos_acc = float(match.group(5)) / 100.0
+                neg_acc = float(match.group(6)) / 100.0
 
                 with self._lock:
                     task.current_step = step
                     task.loss = loss
-                    task.accuracy = accuracy
+                    task.accuracy = val_acc
 
                 logger.bind(component="training_service").info(
-                    "Training progress: step {}/{}, loss={:.4f}, acc={:.2%}",
-                    step, task.steps, loss, accuracy
+                    "Training progress: step {}/{}, loss={:.4f}, train={:.1%}, val={:.1%} (pos={:.1%}, neg={:.1%})",
+                    step, task.steps, loss, train_acc, val_acc, pos_acc, neg_acc
                 )
 
             # Check for cancellation
@@ -537,20 +570,285 @@ class TrainingService:
             task.task_id,
         )
 
-    def _prepare_negative_samples(self, session: TrainingSession) -> None:
-        """Prepare negative samples for training."""
-        negative_dir = session.samples_dir / "negative"
+    def _get_sample_library_dir(self, keyword: str) -> Path:
+        """Get the sample library directory for a keyword.
 
-        # Copy some default negative samples if available
-        default_negative = WAKEWORD_DIR / "negative_samples"
-        if default_negative.exists() and not any(negative_dir.iterdir()):
-            for f in default_negative.glob("*.wav"):
-                shutil.copy(f, negative_dir / f.name)
+        Sample library stores reusable samples across training sessions.
+        Structure:
+          sample_library/
+            <keyword>/
+              positive/  - TTS-generated positive samples
+              negative/  - TTS-generated negative samples
+            _shared/
+              negative/  - Shared negative samples (common phrases)
+        """
+        return WAKEWORD_DIR / "sample_library" / keyword.replace(" ", "_")
 
+    def _prepare_positive_samples(self, session: TrainingSession) -> None:
+        """Prepare positive samples for training.
+
+        Priority:
+        1. User-provided samples (mic recordings)
+        2. Sample library (reusable TTS samples)
+        3. Generate new TTS samples (and save to library)
+        """
+        import asyncio
+        import shutil
+
+        positive_dir = session.samples_dir / "positive"
+        TARGET_POSITIVE_COUNT = 100
+
+        # Count user-provided samples (mic recordings)
+        user_samples = list(positive_dir.glob("mic_*.wav"))
+        user_count = len(user_samples)
+
+        # Count existing samples in session
+        existing_count = sum(1 for _ in positive_dir.glob("*.wav"))
+
+        if existing_count >= TARGET_POSITIVE_COUNT:
+            logger.bind(component="training_service").info(
+                "Using {} existing positive samples (user: {})",
+                existing_count,
+                user_count,
+            )
+            return
+
+        # Check sample library for reusable samples
+        library_dir = self._get_sample_library_dir(session.keyword) / "positive"
+        library_samples = list(library_dir.glob("*.wav")) if library_dir.exists() else []
+
+        needed = TARGET_POSITIVE_COUNT - existing_count
         logger.bind(component="training_service").info(
-            "Prepared negative samples for session '{}'",
-            session.session_id,
+            "Preparing positive samples for '{}' (user: {}, library: {}, target: {})",
+            session.keyword,
+            user_count,
+            len(library_samples),
+            TARGET_POSITIVE_COUNT,
         )
+
+        # Copy samples from library
+        if library_samples:
+            to_copy = min(len(library_samples), needed)
+            for i, sample in enumerate(library_samples[:to_copy]):
+                dest = positive_dir / f"library_{i}.wav"
+                shutil.copy(sample, dest)
+            existing_count += to_copy
+            needed = TARGET_POSITIVE_COUNT - existing_count
+            logger.bind(component="training_service").info(
+                "Copied {} samples from library, need {} more",
+                to_copy,
+                needed,
+            )
+
+        if needed <= 0:
+            return
+
+        # Generate additional TTS samples
+        logger.bind(component="training_service").info(
+            "Generating {} new TTS positive samples for keyword '{}'",
+            needed,
+            session.keyword,
+        )
+
+        try:
+            from backend.voice.tts_generator import TTSGenerator, TTS_VOICES, TTS_RATES, TTS_PITCHES
+            from scipy.io import wavfile
+
+            generator = TTSGenerator()
+
+            # Ensure library directory exists
+            library_dir.mkdir(parents=True, exist_ok=True)
+
+            async def generate_positives():
+                count = 0
+                for i in range(needed):
+                    voice_idx = i % len(TTS_VOICES)
+                    rate_idx = (i // len(TTS_VOICES)) % len(TTS_RATES)
+                    pitch_idx = (i // (len(TTS_VOICES) * len(TTS_RATES))) % len(TTS_PITCHES)
+
+                    voice = TTS_VOICES[voice_idx]
+                    rate = TTS_RATES[rate_idx]
+                    pitch = TTS_PITCHES[pitch_idx]
+
+                    try:
+                        audio = await generator.generate_with_variation(
+                            session.keyword,
+                            voice=voice,
+                            rate=rate,
+                            pitch=pitch,
+                        )
+                        audio_int16 = (audio * 32768).astype(np.int16)
+
+                        # Save to session directory
+                        session_path = positive_dir / f"tts_{existing_count + i}.wav"
+                        wavfile.write(str(session_path), 16000, audio_int16)
+
+                        # Save to library for reuse (use a unique name based on variation)
+                        library_path = library_dir / f"tts_{voice.split('-')[2]}_{rate}_{pitch}_{i}.wav"
+                        wavfile.write(str(library_path), 16000, audio_int16)
+
+                        count += 1
+                        if count % 25 == 0:
+                            logger.bind(component="training_service").info(
+                                "Generated {} / {} TTS positive samples",
+                                count,
+                                needed,
+                            )
+                    except Exception as e:
+                        logger.bind(component="training_service").warning(
+                            "Failed to generate positive sample: {}",
+                            str(e),
+                        )
+                return count
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                count = loop.run_until_complete(generate_positives())
+                logger.bind(component="training_service").info(
+                    "Generated {} new TTS positive samples (saved to library)",
+                    count,
+                )
+                session.tts_count += count
+                session.sample_count += count
+            finally:
+                loop.close()
+
+        except Exception as e:
+            logger.bind(component="training_service").warning(
+                "Failed to generate TTS positive samples: {}",
+                str(e),
+            )
+
+    def _prepare_negative_samples(self, session: TrainingSession) -> None:
+        """Prepare negative samples for training.
+
+        Priority:
+        1. Shared negative sample library (reusable across all keywords)
+        2. Generate new samples if needed (and save to library)
+
+        Target: 500 negative samples.
+        """
+        import asyncio
+        import shutil
+
+        negative_dir = session.samples_dir / "negative"
+        TARGET_NEGATIVE_COUNT = 500
+
+        # Check existing samples in session
+        existing_count = sum(1 for _ in negative_dir.glob("*.wav"))
+        if existing_count >= TARGET_NEGATIVE_COUNT:
+            logger.bind(component="training_service").info(
+                "Using {} existing negative samples in session",
+                existing_count,
+            )
+            return
+
+        # Check shared negative sample library (reusable across all keywords)
+        shared_library_dir = WAKEWORD_DIR / "sample_library" / "_shared" / "negative"
+        shared_samples = list(shared_library_dir.glob("*.wav")) if shared_library_dir.exists() else []
+
+        needed = TARGET_NEGATIVE_COUNT - existing_count
+        logger.bind(component="training_service").info(
+            "Preparing negative samples (session: {}, library: {}, target: {})",
+            existing_count,
+            len(shared_samples),
+            TARGET_NEGATIVE_COUNT,
+        )
+
+        # Copy samples from shared library
+        if shared_samples:
+            to_copy = min(len(shared_samples), needed)
+            for i, sample in enumerate(shared_samples[:to_copy]):
+                dest = negative_dir / f"shared_{i}.wav"
+                shutil.copy(sample, dest)
+            existing_count += to_copy
+            needed = TARGET_NEGATIVE_COUNT - existing_count
+            logger.bind(component="training_service").info(
+                "Copied {} samples from shared library, need {} more",
+                to_copy,
+                needed,
+            )
+
+        if needed <= 0:
+            return
+
+        # Generate additional negative samples
+        logger.bind(component="training_service").info(
+            "Generating {} new negative samples...",
+            needed,
+        )
+
+        try:
+            from backend.voice.tts_generator import TTSGenerator, NEGATIVE_PHRASES, TTS_VOICES, TTS_RATES, TTS_PITCHES
+            from scipy.io import wavfile
+
+            generator = TTSGenerator()
+
+            # Ensure shared library directory exists
+            shared_library_dir.mkdir(parents=True, exist_ok=True)
+
+            async def generate_negatives():
+                count = 0
+                for i in range(needed):
+                    phrase_idx = i % len(NEGATIVE_PHRASES)
+                    voice_idx = (i // len(NEGATIVE_PHRASES)) % len(TTS_VOICES)
+                    rate_idx = (i // (len(NEGATIVE_PHRASES) * len(TTS_VOICES))) % len(TTS_RATES)
+                    pitch_idx = (i // (len(NEGATIVE_PHRASES) * len(TTS_VOICES) * len(TTS_RATES))) % len(TTS_PITCHES)
+
+                    phrase = NEGATIVE_PHRASES[phrase_idx]
+                    voice = TTS_VOICES[voice_idx]
+                    rate = TTS_RATES[rate_idx]
+                    pitch = TTS_PITCHES[pitch_idx]
+
+                    try:
+                        audio = await generator.generate_with_variation(
+                            phrase,
+                            voice=voice,
+                            rate=rate,
+                            pitch=pitch,
+                        )
+                        audio_int16 = (audio * 32768).astype(np.int16)
+
+                        # Save to session directory
+                        session_path = negative_dir / f"negative_{existing_count + i}.wav"
+                        wavfile.write(str(session_path), 16000, audio_int16)
+
+                        # Save to shared library for reuse
+                        library_path = shared_library_dir / f"neg_{phrase[:10]}_{voice.split('-')[2]}_{i}.wav"
+                        wavfile.write(str(library_path), 16000, audio_int16)
+
+                        count += 1
+                        if count % 100 == 0:
+                            logger.bind(component="training_service").info(
+                                "Generated {} / {} negative samples",
+                                count,
+                                needed,
+                            )
+                    except Exception as e:
+                        logger.bind(component="training_service").warning(
+                            "Failed to generate negative sample '{}': {}",
+                            phrase,
+                            str(e),
+                        )
+                return count
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                count = loop.run_until_complete(generate_negatives())
+                logger.bind(component="training_service").info(
+                    "Generated {} new negative samples (saved to shared library)",
+                    count,
+                )
+            finally:
+                loop.close()
+
+        except Exception as e:
+            logger.bind(component="training_service").warning(
+                "Failed to generate TTS negative samples: {}. Training may use random noise fallback.",
+                str(e),
+            )
 
     def get_task(self, task_id: str) -> TrainingTask | None:
         """Get a task by ID."""
@@ -574,13 +872,16 @@ class TrainingService:
             "error": task.error,
         }
 
-        # Include model URL when completed
+        # Include model URL and sample verification path when completed
         if task.status == "completed" and task.model_path:
             session = self._sessions.get(task.session_id)
             if session:
                 safe_name = session.keyword.replace(" ", "_")
                 result["modelUrl"] = f"/wakeword/models/{safe_name}.onnx"
                 result["modelName"] = f"{safe_name}.onnx"
+                # 样本验证路径
+                sample_dir = WAKEWORD_DIR / "training_samples" / session.keyword
+                result["sampleVerificationPath"] = str(sample_dir)
 
         return result
 
