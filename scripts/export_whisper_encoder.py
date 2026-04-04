@@ -33,6 +33,7 @@ def main():
     parser.add_argument("--model", default="tiny", choices=["tiny", "base", "small"], help="Whisper 模型大小")
     parser.add_argument("--output", default="whisper_encoder.onnx", help="输出 ONNX 文件路径")
     parser.add_argument("--verify", action="store_true", help="导出后验证 ONNX 模型")
+    parser.add_argument("--opset", type=int, default=12, help="ONNX opset 版本 (默认 12，兼容 ONNX Runtime Web)")
     args = parser.parse_args()
 
     try:
@@ -71,13 +72,14 @@ def main():
     # 导出 ONNX - 固定形状，不使用动态轴
     # 原因：PyTorch 2.5+ 的导出器与动态轴有兼容性问题
     # 唤醒词场景通常处理单个音频样本，固定 batch=1 足够
+    # 使用较低的 opset 版本 (12) 以兼容 ONNX Runtime Web
     torch.onnx.export(
         encoder,
         dummy_input,
         str(output_path),
         input_names=["input_features"],
         output_names=["last_hidden_state"],
-        opset_version=18,
+        opset_version=args.opset,
         do_constant_folding=True,
     )
 

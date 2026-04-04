@@ -453,13 +453,14 @@ def main():
     head_path = output_dir / f"{safe_name}_head.onnx"
     dummy_input = torch.randn(1, 1500, d_model)  # 假设最大 1500 帧
 
+    # 使用 opset 13 以生成 IR 版本 7，兼容 ONNX Runtime Web
     torch.onnx.export(
         model,
         dummy_input,
         str(head_path),
         input_names=["encoder_features"],
         output_names=["confidence"],
-        opset_version=18,
+        opset_version=13,
         do_constant_folding=True,
     )
 

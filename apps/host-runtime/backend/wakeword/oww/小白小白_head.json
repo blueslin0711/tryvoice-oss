@@ -1,0 +1,21 @@
+{
+  "keyword": "小白小白",
+  "version": 3,
+  "method": "whisper_transfer",
+  "whisper_model": "openai/whisper-tiny",
+  "d_model": 384,
+  "encoder_path": "whisper_encoder_tiny.onnx",
+  "head_path": "小白小白_head.onnx",
+  "input_shape": [
+    1,
+    80,
+    3000
+  ],
+  "created_at": "2026-04-04T16:33:32.458726",
+  "training": {
+    "steps": 3000,
+    "positive_samples": 20,
+    "negative_samples": 80,
+    "best_val_accuracy": 1.0
+  }
+}

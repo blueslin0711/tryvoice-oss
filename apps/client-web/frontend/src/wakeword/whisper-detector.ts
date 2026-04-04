@@ -264,32 +264,228 @@ export class WhisperWakeWordDetector {
   }
 
   /**
-   * 计算 mel 频谱图（简化版）
+   * 计算 mel 频谱图（与 Whisper 兼容）
    *
-   * 注意：这是一个简化实现，实际应该使用 ONNX melspectrogram 模型
-   * 或 Web Audio API 的 AnalyserNode。
+   * 使用 STFT + mel 滤波器组，匹配 Whisper 的预处理。
    */
   private async _computeMelSpectrogram(audio: Float32Array): Promise<Float32Array | null> {
-    // 简化实现：使用 STFT 近似
-    // 实际实现应该使用 melspectrogram.onnx
+    // Whisper mel 参数
+    const nMels = 80;
+    const nFft = 400;
+    const hopLength = 160;
+    const sampleRate = 16000;
 
-    const numFrames = WHISPER_MAX_LENGTH;
-    const melData = new Float32Array(WHISPER_N_MELS * numFrames);
+    // 计算 STFT
+    const numFrames = Math.floor((audio.length - nFft) / hopLength) + 1;
+    const maxFrames = WHISPER_MAX_LENGTH;
 
-    // 简单的能量计算（仅用于演示）
-    // 实际需要完整的 STFT + mel 滤波器组
-    for (let i = 0; i < numFrames; i++) {
-      const start = i * WHISPER_HOP_LENGTH;
-      const end = Math.min(start + WHISPER_N_FFT, audio.length);
-      const frameEnergy = audio.slice(start, end).reduce((sum, v) => sum + v * v, 0) / (end - start);
+    // 使用实际帧数，不足则填充
+    const effectiveFrames = Math.min(numFrames, maxFrames);
+    const melData = new Float32Array(nMels * maxFrames);
 
-      // 伪 mel 特征（实际应该用真正的 mel 滤波器组）
-      for (let j = 0; j < WHISPER_N_MELS; j++) {
-        melData[i * WHISPER_N_MELS + j] = Math.log(frameEnergy + 1e-10) / 10;
+    // 计算 mel 滤波器组矩阵
+    const melFilterBank = this._createMelFilterBank(nMels, nFft, sampleRate);
+
+    // STFT 计算 - 先收集所有 log-mel 值，最后统一归一化
+    const logMelValues: number[] = [];
+
+    for (let frame = 0; frame < effectiveFrames; frame++) {
+      const start = frame * hopLength;
+      const windowed = this._applyHannWindow(audio.slice(start, start + nFft));
+
+      // FFT (使用完整的复数 FFT)
+      const fftResult = this._complexFFT(windowed);
+      const powerSpectrum = new Float32Array(nFft / 2 + 1);
+      for (let i = 0; i <= nFft / 2; i++) {
+        powerSpectrum[i] = fftResult.real[i] * fftResult.real[i] + fftResult.imag[i] * fftResult.imag[i];
+      }
+
+      // 应用 mel 滤波器组
+      const melEnergies = this._applyMelFilterBank(powerSpectrum, melFilterBank);
+
+      // Log
+      for (let melBin = 0; melBin < nMels; melBin++) {
+        const logMel = Math.log(Math.max(melEnergies[melBin], 1e-10));
+        logMelValues.push(logMel);
       }
     }
 
-    return melData;
+    // 计算均值和标准差（与训练时一致）
+    const mean = logMelValues.reduce((a, b) => a + b, 0) / logMelValues.length;
+    const variance = logMelValues.reduce((a, b) => a + (b - mean) * (b - mean), 0) / logMelValues.length;
+    const std = Math.sqrt(variance) + 1e-8;
+
+    // 归一化并存储
+    for (let i = 0; i < logMelValues.length; i++) {
+      const normalized = (logMelValues[i] - mean) / std;
+      melData[i] = normalized;
+    }
+
+    // 形状：需要转置为 (80, 3000) - Whisper encoder 期望的格式
+    const transposed = new Float32Array(nMels * maxFrames);
+    for (let i = 0; i < maxFrames; i++) {
+      for (let j = 0; j < nMels; j++) {
+        transposed[j * maxFrames + i] = melData[i * nMels + j];
+      }
+    }
+
+    return transposed;
+  }
+
+  /**
+   * 创建 mel 滤波器组矩阵
+   */
+  private _createMelFilterBank(nMels: number, nFft: number, sampleRate: number): number[][] {
+    const melMin = 0;
+    const melMax = this._hzToMel(sampleRate / 2);
+    const melPoints = new Float32Array(nMels + 2);
+    for (let i = 0; i < nMels + 2; i++) {
+      melPoints[i] = melMin + (melMax - melMin) * i / (nMels + 1);
+    }
+
+    // 转换回 Hz
+    const hzPoints = melPoints.map(m => this._melToHz(m));
+
+    // FFT 频点
+    const fftFreqs = new Float32Array(nFft / 2 + 1);
+    for (let i = 0; i <= nFft / 2; i++) {
+      fftFreqs[i] = i * sampleRate / nFft;
+    }
+
+    // 构建滤波器组
+    const filterBank: number[][] = [];
+    for (let melBin = 0; melBin < nMels; melBin++) {
+      const filter: number[] = new Array(nFft / 2 + 1).fill(0);
+      const left = hzPoints[melBin];
+      const center = hzPoints[melBin + 1];
+      const right = hzPoints[melBin + 2];
+
+      for (let fftBin = 0; fftBin <= nFft / 2; fftBin++) {
+        const freq = fftFreqs[fftBin];
+        if (freq >= left && freq <= center) {
+          filter[fftBin] = (freq - left) / (center - left);
+        } else if (freq >= center && freq <= right) {
+          filter[fftBin] = (right - freq) / (right - center);
+        }
+      }
+
+      // Slaney 归一化
+      const enorm = 2.0 / (hzPoints[melBin + 2] - hzPoints[melBin]);
+      for (let i = 0; i < filter.length; i++) {
+        filter[i] *= enorm;
+      }
+
+      filterBank.push(filter);
+    }
+
+    return filterBank;
+  }
+
+  /**
+   * Hz 到 Mel 转换（Slaney 公式）
+   */
+  private _hzToMel(hz: number): number {
+    const fSp = 200.0 / 3;
+    const minLogHz = 1000.0;
+    const minLogMel = (minLogHz * fSp);
+    const logstep = Math.log(6.4) / 27.0;
+
+    if (hz < minLogHz) {
+      return hz * fSp;
+    } else {
+      return minLogMel + Math.log(hz / minLogHz) / logstep;
+    }
+  }
+
+  /**
+   * Mel 到 Hz 转换
+   */
+  private _melToHz(mel: number): number {
+    const fSp = 200.0 / 3;
+    const minLogHz = 1000.0;
+    const minLogMel = (minLogHz * fSp);
+    const logstep = Math.log(6.4) / 27.0;
+
+    if (mel < minLogMel) {
+      return mel / fSp;
+    } else {
+      return minLogHz * Math.exp(logstep * (mel - minLogMel));
+    }
+  }
+
+  /**
+   * 应用 Hann 窗
+   */
+  private _applyHannWindow(frame: Float32Array): Float32Array {
+    const n = frame.length;
+    const windowed = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      windowed[i] = frame[i] * 0.5 * (1 - Math.cos(2 * Math.PI * i / (n - 1)));
+    }
+    return windowed;
+  }
+
+  /**
+   * 复数 FFT（DFT 实现）
+   */
+  private _complexFFT(frame: Float32Array): { real: Float32Array; imag: Float32Array } {
+    const n = frame.length;
+    const real = new Float32Array(n);
+    const imag = new Float32Array(n);
+
+    // DFT 实现
+    for (let k = 0; k < n; k++) {
+      let re = 0;
+      let im = 0;
+      for (let t = 0; t < n; t++) {
+        const angle = 2 * Math.PI * k * t / n;
+        re += frame[t] * Math.cos(angle);
+        im -= frame[t] * Math.sin(angle);
+      }
+      real[k] = re;
+      imag[k] = im;
+    }
+
+    return { real, imag };
+  }
+
+  /**
+   * 实数 FFT（简化版）- 已弃用，使用 _complexFFT
+   * @deprecated
+   */
+  private _realFFT(frame: Float32Array): Float32Array {
+    const n = frame.length;
+    const result = new Float32Array(n / 2 + 1);
+
+    // 简化的 DFT 实现（仅计算实数部分）
+    // 实际应该使用更高效的算法或 Web Audio API
+    for (let k = 0; k <= n / 2; k++) {
+      let sum = 0;
+      for (let t = 0; t < n; t++) {
+        sum += frame[t] * Math.cos(2 * Math.PI * k * t / n);
+      }
+      result[k] = sum;
+    }
+
+    return result;
+  }
+
+  /**
+   * 应用 mel 滤波器组
+   */
+  private _applyMelFilterBank(powerSpectrum: Float32Array, filterBank: number[][]): Float32Array {
+    const nMels = filterBank.length;
+    const result = new Float32Array(nMels);
+
+    for (let melBin = 0; melBin < nMels; melBin++) {
+      let sum = 0;
+      for (let fftBin = 0; fftBin < powerSpectrum.length; fftBin++) {
+        sum += powerSpectrum[fftBin] * filterBank[melBin][fftBin];
+      }
+      result[melBin] = sum;
+    }
+
+    return result;
   }
 
   /**
@@ -305,12 +501,22 @@ export class WhisperWakeWordDetector {
       inputNames: string[];
     };
 
-    // 重塑特征维度
-    // 假设 head 输入形状为 (batch, seq_len, d_model)
+    // Whisper head 模型期望固定输入形状 (1, 1500, 384)
+    // 需要填充或截断到 1500 帧
     const dModel = 384; // whisper-tiny
+    const targetSeqLen = 1500;
     const seqLen = Math.floor(features.length / dModel);
 
-    const input = new ortApi.Tensor('float32', features.slice(0, seqLen * dModel), [1, seqLen, dModel]);
+    // 创建固定大小的输入张量
+    const paddedFeatures = new Float32Array(targetSeqLen * dModel);
+
+    // 复制有效特征
+    const copyLen = Math.min(seqLen, targetSeqLen) * dModel;
+    paddedFeatures.set(features.slice(0, copyLen));
+
+    // 剩余部分保持为零填充
+
+    const input = new ortApi.Tensor('float32', paddedFeatures, [1, targetSeqLen, dModel]);
     const inputName = session.inputNames[0];
 
     const output = await session.run({ [inputName]: input });

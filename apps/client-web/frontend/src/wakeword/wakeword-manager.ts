@@ -1023,9 +1023,11 @@ async function _owwLoadSessions(ort: { InferenceSession: { create: (url: string 
   // Initialize Whisper pipeline for Whisper models
   if (whisperKeywords.length > 0) {
     try {
-      log.info('Initializing Whisper pipeline for keywords', { keywords: whisperKeywords });
-      await initWhisperPipeline();
-      log.info('Whisper pipeline initialized');
+      log.info('Skipping Whisper pipeline initialization (performance optimization)', { keywords: whisperKeywords });
+      // Whisper detection temporarily disabled - JavaScript mel computation is too slow
+      // TODO: Use Web Audio API AnalyserNode or WebWorker for mel computation
+      // await initWhisperPipeline();
+      // log.info('Whisper pipeline initialized');
     } catch (e) {
       log.error('Failed to initialize Whisper pipeline', { error: String(e) });
     }
@@ -1154,9 +1156,10 @@ export async function initWhisperPipeline(): Promise<void> {
     for (const [botId, kw] of Object.entries(wwMapping)) {
       if (!BOT_IDS.includes(botId)) continue;
       // Check if this keyword has a Whisper model (version >= 3)
-      const modelMeta = await fetch(`/wakeword/models/${encodeURIComponent(kw || '')}.json`).then(r => r.ok ? r.json() : null).catch(() => null);
+      // Whisper models store metadata in {keyword}_head.json (served from /wakeword/oww/)
+      const modelMeta = await fetch(`/wakeword/${encodeURIComponent(kw || '')}_head.json`).then(r => r.ok ? r.json() : null).catch(() => null);
       if (modelMeta && modelMeta.version >= 3) {
-        headUrls[kw] = `/wakeword/models/${encodeURIComponent(kw)}_head.onnx`;
+        headUrls[kw] = `/wakeword/${encodeURIComponent(kw)}_head.onnx`;
         whisperKeywordToBotId.set(kw, botId);
       }
     }
@@ -1178,6 +1181,7 @@ export async function initWhisperPipeline(): Promise<void> {
     });
 
     WHISPER_AVAILABLE = true;
+    whisperActive = true;  // Enable Whisper detection in audio processing loop
     log.info('Whisper pipeline initialized', { keywords: WHISPER_KEYWORDS });
 
   } catch (e) {
