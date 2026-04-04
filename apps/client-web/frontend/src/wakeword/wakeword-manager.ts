@@ -145,7 +145,7 @@ let OWW_PIPELINE_MODELS: Record<string, Record<string, string>> = {};
 let OWW_PIPELINE_META: Record<string, Record<string, { inputShape?: string }>> = {};
 let _baseOwwKeywords: string[] = [];
 let _baseOwwKeywordToModel: Record<string, string> = {};
-let _baseOwwModelMeta: Record<string, { inputShape?: string; role?: string }> = {};
+let _baseOwwModelMeta: Record<string, { inputShape?: string; role?: string; version?: number; method?: string }> = {};
 let _activePipeline: string = (() => {
   try { return localStorage.getItem(STORAGE_KEY + 'owwPipeline') || ''; } catch (_e) { return ''; }
 })();
@@ -185,7 +185,7 @@ const KW_ENDWORD = '__endword__';
 const KW_CANCELWORD = '__cancelword__';
 
 // OWW end/cancel word state — unified model meta (inputShape, role hint)
-let OWW_MODEL_META: Record<string, { inputShape?: string; role?: string }> = {};
+let OWW_MODEL_META: Record<string, { inputShape?: string; role?: string; version?: number; method?: string }> = {};
 let owwEndwordSession: unknown = null;
 let owwCancelwordSession: unknown = null;
 let owwEndwordKeyword = (() => { try { return localStorage.getItem(STORAGE_KEY + 'owwEndword') || ''; } catch (_e) { return ''; } })();
@@ -231,7 +231,7 @@ function _applyPipeline(pipeline: string): void {
   const pipelineKeywords = Object.keys(pipelineModels);
   const mergedKeywords = [..._baseOwwKeywords];
   const mergedModels = {..._baseOwwKeywordToModel};
-  const mergedMeta: Record<string, { inputShape?: string; role?: string }> = {..._baseOwwModelMeta};
+  const mergedMeta: Record<string, { inputShape?: string; role?: string; version?: number; method?: string }> = {..._baseOwwModelMeta};
   for (const kw of pipelineKeywords) {
     const displayKw = `${kw} (${pipeline})`;
     mergedModels[displayKw] = pipelineModels[kw];
@@ -992,11 +992,24 @@ async function _owwLoadSessions(ort: { InferenceSession: { create: (url: string 
 
   // Load keyword sessions (only load new ones, reuse cached)
   owwKeywordSessions = {};
+  const whisperKeywords: string[] = []; // Track Whisper models
+
   await Promise.all(activeKws.map(async (kw) => {
     if (_owwCachedKeywordSessions[kw]) {
       owwKeywordSessions[kw] = _owwCachedKeywordSessions[kw];
       return;
     }
+
+    // Check if this is a Whisper model (version >= 3 or method === 'whisper_transfer')
+    const modelMeta = OWW_MODEL_META[kw] || {};
+    const isWhisperModel = (modelMeta.version ?? 0) >= 3 || modelMeta.method === 'whisper_transfer';
+
+    if (isWhisperModel) {
+      log.info('Skipping Whisper model in OWW pipeline, will use Whisper pipeline', { kw, modelMeta });
+      whisperKeywords.push(kw);
+      return;
+    }
+
     const modelFile = OWW_KEYWORD_TO_MODEL[kw];
     const url = withAssetVersion('/wakeword/' + modelFile);
     log.info('OWW loading model', { kw, modelFile, url });
@@ -1005,7 +1018,18 @@ async function _owwLoadSessions(ort: { InferenceSession: { create: (url: string 
     _owwCachedKeywordSessions[kw] = sess;
     log.info('OWW model loaded OK', { kw });
   }));
-  _owwCachedActiveKws = activeKws;
+  _owwCachedActiveKws = activeKws.filter(kw => !whisperKeywords.includes(kw));
+
+  // Initialize Whisper pipeline for Whisper models
+  if (whisperKeywords.length > 0) {
+    try {
+      log.info('Initializing Whisper pipeline for keywords', { keywords: whisperKeywords });
+      await initWhisperPipeline();
+      log.info('Whisper pipeline initialized');
+    } catch (e) {
+      log.error('Failed to initialize Whisper pipeline', { error: String(e) });
+    }
+  }
 
   // Load personalized weights if available
   try {

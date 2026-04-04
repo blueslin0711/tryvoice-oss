@@ -191,14 +191,21 @@ async def config_endpoint(request: Request):
 
             oww_keywords.append(kw)
             oww_keyword_to_model[kw] = f.name
-            # Store meta for models with non-default inputShape or a role hint
-            entry: dict[str, str] = {}
+            # Store meta for models with non-default inputShape, role hint, or Whisper models
+            entry: dict[str, str | int] = {}
             input_shape = meta.get("inputShape", "") or _detect_onnx_input_shape(f)
             role = meta.get("role", "")
+            version = meta.get("version")
+            method = meta.get("method", "")
             if input_shape and input_shape != "3d":
                 entry["inputShape"] = input_shape
             if role in ("endword", "cancelword"):
                 entry["role"] = role
+            # Include version and method for Whisper models (version >= 3)
+            if version is not None:
+                entry["version"] = version
+            if method:
+                entry["method"] = method
             if entry:
                 oww_model_meta[kw] = entry
 
